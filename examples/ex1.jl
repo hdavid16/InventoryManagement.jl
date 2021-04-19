@@ -60,4 +60,6 @@ for t in 1:env.num_periods
     (env)(action)
 end
 
-@df env.profit plot(:period, :value, group=:node)
+node_profit = groupby(env.profit, :node)
+profit = transform(node_profit, :value => cumsum)
+@df profit plot(:period, :value_cumsum, group=:node)
