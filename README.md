@@ -20,13 +20,52 @@ This package generalizes and extends and the inventory management environment av
 - [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results and specify most network parameters.
 - [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the market demands at the end distributors.
 
+## Sequence of Events
+
 ## Model Inputs
 
 ### Node-specific
 
+A `DataFrame` is stored in the metadata of each node using the key `:params` with the following fields:
+- `"product"::Vector{String}`: product names
+- `"init_inventory"::Vector{Float64}`: initial inventories for each product
+- `"holding_cost"::Vector{Float64}`: unit holding cost for each product
+- `"production_cost"::Vector{Float64}`: unit production cost for each product
+- `"production_capacity"::Vector{Float64}`: maximum production capacity for each product (use `Inf` for uncapacitated production)
+- `"market_demand"::Vector{Sampleable}`: probability distributions for the market demands for each product
+- `"demand_frequency"::Vector{Float64}`: probability that demand will occur (value between `0.0` and `1.0`)
+- `"market_price"::Vector{Float64}`: sales price for each product at the end distributor
+- `"demand_penalty"::Vector{Float64}`: unit penalty for unsatisfied demand
+
 ### Edge-specific
 
-## Sequence of Events
+A `DataFrame` is stored in the metadata of each node using the key `:params` with the following fields:
+- `"product"::Vector{String}`: product names
+- `"sales_price"::Vector{Float64}`: unit sales price for inventory sent on that edge (from supplier to receiver)
+- `"transportation_cost"::Vector{Float64}`: unit transportation cost per period for inventory in-transit
+
+A `Univariate Discrete Distribution` is also defined for the lead time on each edge and stored using the key `:lead_time`.
+
+## `SupplyChainEnv`
+
+A `SupplyChainEnv` has the following fields:
+- `network::MetaDiGraph`: Supply Chain Network (metagraph)
+- `markets::Array`: list of markets (end distributors)
+- `producers::Array`: list of producer nodes
+- `distributors::Array`: list of distribution centers (excludes end distributors where markets exist)
+- `products::Array`: list of product names (strings)
+- `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node
+- `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each arc
+- `inv_position::DataFrame`: timeseries Inventory Position for each node
+- `replenishments::DataFrame`: timeseries Replenishment orders placed on each arc
+- `shipments::DataFrame`: current shipments and time to arrival for each node
+- `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
+- `profit::DataFrame`: timeseries with profit at each node
+- `reward::Float64`: reward in the system (used for RL)
+- `period::Int`: period in the simulation
+- `num_periods::Int`: number of periods in the simulation
+- `backlog::Bool`: backlogging allowed if true; otherwise, unfulfilled demand is lost sales
+- `discount::Float64`: time discount factor (interest rate)
 
 ## Example
 
