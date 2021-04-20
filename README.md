@@ -80,6 +80,7 @@ A `SupplyChainEnv` has the following fields:
 - `num_periods::Int`: number of periods in the simulation
 - `backlog::Bool`: backlogging allowed if true; otherwise, unfulfilled demand is lost sales
 - `discount::Float64`: time discount factor (interest rate)
+- `seed::Int`: random seed
 
 ## Example
 
