@@ -28,6 +28,8 @@ A `SupplyChainEnv` object is created based on system inputs and network structur
 
 ## Example
 
+The example below is for a 30 period simulation of a supply network with two plants (nodes 1 and 2) that supply and end distributor (node 3).
+
 ```julia
 using LightGraphs, MetaGraphs, DataFrames, Distributions
 using InventoryManagement, StatsPlots
