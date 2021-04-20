@@ -26,7 +26,7 @@ A `SupplyChainEnv` object is created based on system inputs and network structur
 
 ## Sequence of Events
 
-# Example
+## Example
 
 ```julia
 using LightGraphs, MetaGraphs, DataFrames, Distributions
