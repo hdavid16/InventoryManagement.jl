@@ -23,7 +23,17 @@ This package generalizes and extends and the inventory management environment av
 ## Sequence of Events
 
 The following sequence of events occurs in each period of the simulation:
-1. 
+1. Start period.
+2. Place inventory replenishment orders. These are limited to the available production capacity (supplier is a producer) or available inventory (supplier is a distribution node).
+   - Distributors ship inventory.
+   - Producers manufacture products (a production lead time is assessed). Production costs are incurred at the start of production.
+   - Producers send orders that have completed (after the production lead time).
+4. Receive inventory that has arrived at each node (after the lead time has transpired).
+5. Pay suppliers for inventory received.
+6. Pay shipper for inventory shipped.
+7. Market demand occurs after tossing a weighted coin with the probability of demand occuring defined by the `demand_frequency`.
+8. Demand is fulfilled up to available inventory at the end distributors.
+9. Unfulfilled demand is penalized and backlogged (if `backlog = true`)
 
 ## Model Inputs
 
@@ -57,11 +67,11 @@ A `SupplyChainEnv` has the following fields:
 - `producers::Array`: list of producer nodes
 - `distributors::Array`: list of distribution centers (excludes end distributors where markets exist)
 - `products::Array`: list of product names (strings)
-- `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node
-- `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each arc
-- `inv_position::DataFrame`: timeseries Inventory Position for each node
-- `replenishments::DataFrame`: timeseries Replenishment orders placed on each arc
-- `shipments::DataFrame`: current shipments and time to arrival for each node
+- `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node at the end of each period
+- `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
+- `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
+- `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
+- `shipments::DataFrame`: current shipments and time to arrival for each node 
 - `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
 - `profit::DataFrame`: timeseries with profit at each node
 - `reward::Float64`: reward in the system (used for RL)
