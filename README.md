@@ -11,7 +11,7 @@
 
 A `SupplyChainEnv` object is created based on system inputs and network structure, which can be used to simulate stochastic demand at the end distribution centers and inventory replenishment decisions throughout the network. The `SupplyChainEnv` can be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
 
-This package generalizes and extends and the inventory management environment available in (OR-Gym)[https://github.com/hubbs5/or-gym].
+This package generalizes and extends and the inventory management environment available in [OR-Gym](https://github.com/hubbs5/or-gym).
 
 ## Dependencies
 
