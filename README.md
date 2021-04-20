@@ -1,6 +1,6 @@
 # InventoryManagement
 
-*Discrete-time simulation environment for Inventory Management in Supply Networks.*
+Discrete-time simulation environment for Inventory Management in Supply Networks.
 
 ## Overview
 
@@ -72,7 +72,7 @@ A `SupplyChainEnv` has the following fields:
 - `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
 - `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
 - `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
-- `shipments::DataFrame`: current shipments and time to arrival for each node 
+- `shipments::DataFrame`: current shipments and time to arrival for each node
 - `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
 - `profit::DataFrame`: timeseries with profit at each node
 - `reward::Float64`: reward in the system (used for RL)

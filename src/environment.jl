@@ -18,6 +18,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     num_periods::Int #number of periods in the simulation
     backlog::Bool #Backlogging allowed if true; otherwise, lost sales
     discount::Float64 #Time discount factor
+    seed::Int #Random seed
 end
 
 function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
@@ -71,3 +72,5 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                     replenishments, shipments, demand,
                     profit, reward, period, num_periods, backlog, discount)
 end
+
+Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
