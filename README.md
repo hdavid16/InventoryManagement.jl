@@ -12,10 +12,19 @@
 A `SupplyChainEnv` object is created based on system inputs and network structure, which can be used to simulate stochastic demand at the end distribution centers and inventory replenishment decisions throughout the network. The `SupplyChainEnv` can be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
 
 # Dependencies
+
 *InventoryManagement.jl* relies on the following packages:
 - [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Define supply network structure and specify node- and edge-specific parameters.
 - [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results and specify most network parameters.
 - [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the market demands at the end distributors.
+
+# Model Inputs
+
+## Node-specific
+
+## Edge-specific
+
+# Sequence of Events
 
 # Example
 
@@ -28,10 +37,7 @@ adjmx = [0 0 1;
          0 0 1;
          0 0 0]
 net = MetaDiGraph(adjmx)
-#define node types (**can be inferred**)
-set_prop!(net, 1, :type, :producer)
-set_prop!(net, 2, :type, :producer)
-set_prop!(net, 3, :type, :distributor)
+
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_prop!(net, 1, :params,
             DataFrame("product" => ["A", "B", "C", "D", "E"],
@@ -75,13 +81,19 @@ set_prop!(net, 2, 3, :params,
 set_prop!(net, 1, 3, :lead_time, Poisson(5)) #NOTE: could make this specific to MOT
 set_prop!(net, 2, 3, :lead_time, Poisson(5)) #NOTE: could make this specific to MOT
 
+# Make environment
 env = SupplyChainEnv(net, 30)
+
+# Specify a random replenishment action
 action = DataFrame(:product=>["A","B","C","D","E"],
-                   [Symbol((a.src,a.dst)) => rand(5) for a in edges(net)]...)
+                   [Symbol((a.src,a.dst)) => rand(5)*5 for a in edges(net)]...)
+
+# Run simulation
 for t in 1:env.num_periods
     (env)(action)
 end
 
+# Plot cumulative profit at each node
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
 @df profit plot(:period, :value_cumsum, group=:node)
