@@ -22,6 +22,9 @@ This package generalizes and extends and the inventory management environment av
 
 ## Sequence of Events
 
+The following sequence of events occurs in each period of the simulation:
+1. 
+
 ## Model Inputs
 
 ### Node-specific
