@@ -1,9 +1,10 @@
 module InventoryManagement
 
-using LightGraphs, MetaGraphs, DataFrames
+using LightGraphs, MetaGraphs, DataFrames, Distributions
 
 include("environment.jl")
+include("actions.jl")
 
-export SupplyChainEnv
+export SupplyChainEnv, policy
 
 end
