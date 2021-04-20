@@ -33,7 +33,8 @@ The following sequence of events occurs in each period of the simulation:
 6. Pay shipper for inventory shipped.
 7. Market demand occurs after tossing a weighted coin with the probability of demand occuring defined by the `demand_frequency`.
 8. Demand is fulfilled up to available inventory at the end distributors.
-9. Unfulfilled demand is penalized and backlogged (if `backlog = true`)
+9. Unfulfilled demand is penalized and backlogged (if `backlog = true`).
+10. Each node pays a holding cost and a transportation cost for on-hand inventory and in-transit inventory at each period.
 
 ## Model Inputs
 
