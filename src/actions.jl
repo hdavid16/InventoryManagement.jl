@@ -115,38 +115,48 @@ function (x::SupplyChainEnv)(action)
 
     #calculate profit at each node
     for n in vertices(x.network)
-        profit = 0
-        params0 = get_prop(x.network, n, :params)[:,["product", "production_cost", "market_price", "demand_penalty"]]
+        profit = 0 #initialize node profit
+        #pay inventory holding cost
+        params0 = get_prop(x.network, n, :params)[:,["product", "holding_cost", "production_cost", "market_price", "demand_penalty"]]
+        onhand = filter(j -> j.period == x.period && j.node == n, x.inv_on_hand)[:,["product", "level"]]
+        df = leftjoin(params0, onhand, on="product")
+        profit -= sum(skipmissing(df.level .* df.holding_cost))
+        #pay suppliers for received inventory and pay transportation cost
         for pred in inneighbors(x.network, n)
-            params = get_prop(x.network, pred, n, :params)[:,["product", "sales_price"]]
+            params = get_prop(x.network, pred, n, :params)[:,["product", "sales_price", "transportation_cost"]]
+            #pay purchase of inventory
             purchased = filter(j -> j.arc == (pred, n), arrivals)[:,["product", "amount"]]
             if !isempty(purchased)
                 df = leftjoin(params, purchased, on="product")
                 profit -= sum(skipmissing(df.amount .* df.sales_price))
             end
+            #pay transportation (pipeline hoding) cost
+            intransit = filter(j -> j.period == x.period && j.arc == (pred, n), x.inv_pipeline)[:,["product", "level"]]
+            df = leftjoin(params, intransit, on="product")
+            profit -= sum(skipmissing(df.level .* df.transportation_cost))
         end
+        #receive payment for delivered inventory and pay production costs
         for succ in outneighbors(x.network, n)
             params = get_prop(x.network, n, succ, :params)[:,["product", "sales_price"]]
+            #receive payment for delivered inventory
             sold = filter(j -> j.arc == (n, succ), arrivals)[:,["product", "amount"]]
             if !isempty(sold)
                 df = leftjoin(params, sold, on="product")
                 profit += sum(skipmissing(df.amount .* df.sales_price))
             end
+            #pay production cost
             if n in x.producers
                 produced = filter(j -> j.period == x.period && j.arc == (n, succ), x.replenishments)
-                if !isempty(produced)
-                    df1 = leftjoin(params0, produced, on="product")
-                    profit -= sum(skipmissing(df1.amount .* df1.production_cost))
-                end
+                df1 = leftjoin(params0, produced, on="product")
+                profit -= sum(skipmissing(df1.amount .* df1.production_cost))
             end
         end
+        #sales profit at end distributors (and penalize for unfulfilled demand)
         if n in x.markets
             sold = filter(j -> j.period == x.period && j.market == n, x.demand)
-            if !isempty(sold)
-                df1 = leftjoin(params0, sold, on="product")
-                profit += sum(skipmissing(df1.sale .* df1.market_price))
-                profit -= sum(skipmissing(df1.unfulfilled .* df1.demand_penalty))
-            end
+            df1 = leftjoin(params0, sold, on="product")
+            profit += sum(skipmissing(df1.sale .* df1.market_price))
+            profit -= sum(skipmissing(df1.unfulfilled .* df1.demand_penalty))
         end
         push!(x.profit, [x.period, 1/(1+x.discount)^x.period * profit, n])
     end
