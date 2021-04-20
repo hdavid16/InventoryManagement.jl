@@ -2,7 +2,7 @@
 
 *Discrete-time simulation environment for Inventory Management in Supply Networks.*
 
-# Overview
+## Overview
 
 *InventoryManagement.jl* allows defining a supply network with three main actors:
 - `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced).
@@ -11,20 +11,20 @@
 
 A `SupplyChainEnv` object is created based on system inputs and network structure, which can be used to simulate stochastic demand at the end distribution centers and inventory replenishment decisions throughout the network. The `SupplyChainEnv` can be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
 
-# Dependencies
+## Dependencies
 
 *InventoryManagement.jl* relies on the following packages:
 - [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Define supply network structure and specify node- and edge-specific parameters.
 - [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results and specify most network parameters.
 - [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the market demands at the end distributors.
 
-# Model Inputs
+## Model Inputs
 
-## Node-specific
+### Node-specific
 
-## Edge-specific
+### Edge-specific
 
-# Sequence of Events
+## Sequence of Events
 
 # Example
 
