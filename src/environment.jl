@@ -26,7 +26,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                         backlog::Bool=true, discount::Float64=0.0,
                         seed::Int=0)
     #perform checks
-        #order of products in init_inventory, production_capacity, market_demand and demand_frequency keys must be the same
+        #order of products in initial_inventory, production_capacity, market_demand and demand_frequency keys must be the same
 
     #get main nodes
     nodes = vertices(network)
@@ -41,7 +41,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :product => [], :level => Float64[])
     for n in setdiff(nodes, plants), p in prods
-        init_inv = get_prop(network, n, :init_inventory)
+        init_inv = get_prop(network, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p]))
     end
     inv_pipeline = DataFrame(:period => zeros(Int, length(prods)*length(arcs)),
@@ -81,3 +81,24 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
 end
 
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
+
+function reset!(env::SupplyChainEnv)
+    env.period = 0
+    env.reward = 0
+    filter!(i -> i.period == 0, env.inv_on_hand)
+    filter!(i -> i.period == 0, env.inv_pipeline)
+    filter!(i -> i.period == 0, env.inv_position)
+    filter!(i -> i.period == 0, env.replenishments)
+    filter!(i -> i.period == 0, env.demand)
+    filter!(i -> i.period == 0, env.profit)
+    env.shipments = DataFrame(:arc => [],
+                          :product => [],
+                          :amount => Float64[],
+                          :lead => Int[])
+    env.production = DataFrame(:arc => [],
+                           :product => [],
+                           :amount => Float64[],
+                           :lead => Int[])
+end
+
+is_terminated(env::SupplyChainEnv) = env.period == env.num_periods

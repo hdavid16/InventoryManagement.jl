@@ -1,3 +1,11 @@
+function show_action(action, env)
+    prods = env.products
+    arcs = [(e.src, e.dst) for e in edges(env.network)]
+    act = reshape(action, (length(prods), length(arcs)))
+    df = DataFrame(:product => prods,
+                   [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
+end
+
 function (x::SupplyChainEnv)(action)
     #validate action input (i.e., type = DataFrame, fields = ["product" => String, "Arc_i_j (same order as edges(network))" => Float64])
 
@@ -23,34 +31,37 @@ function (x::SupplyChainEnv)(action)
     #sample lead times
     leads = Dict(a => rand(get_prop(x.network, a, :lead_time)) for a in edges(x.network)) #sample lead time distribution
 
+    #reshape action
+    prods = x.products
+    arcs = [(e.src, e.dst) for e in edges(x.network)]
+    act = reshape(action, (length(prods), length(arcs)))
+
     #place requests
-    for i in 1:nrow(action)
-        p = action[i, :product] #product requested
-        for a in edges(x.network)
-            amount = copy(action[i, Symbol((a.src,a.dst))]) #amount requested
+    for i in 1:length(prods)
+        p = prods[i] #product requested
+        for (j,a) in enumerate(arcs)
+            amount = act[i,j] #amount requested
             prod_time = 0 #initialize production time
             #accept or adjust requests
-            if a.src in x.producers
-                capacity = get_prop(x.network, a.src, :production_capacity)[p] #get production capacity
+            if a[1] in x.producers
+                capacity = get_prop(x.network, a[1], :production_capacity)[p] #get production capacity
                 accepted = min(amount, capacity) #accepted request
-                action[i, Symbol((a.src,a.dst))] = accepted #overwrite request to comply with constraints
                 if amount > capacity
-                    @warn "Replenishment request for product $p to node $(a.src) was reduced by $(amount - action[i,Symbol((a.src,a.dst))]) due to insufficient production capacity."
+                    @warn "Replenishment request for product $p to node $(a[1]) was reduced by $(amount - accepted) due to insufficient production capacity."
                 end
                 if accepted > 0 #schedule production
-                    prod_time = get_prop(x.network, a.src, :production_time)[p] #production time
-                    push!(x.production, ((a.src,a.dst), p, accepted, prod_time))
+                    prod_time = get_prop(x.network, a[1], :production_time)[p] #production time
+                    push!(x.production, (a, p, accepted, prod_time))
                 end
             else
-                supply = filter(i -> i.period == x.period && i.node == a.src && i.product == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
+                supply = filter(i -> i.period == x.period && i.node == a[1] && i.product == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
                 accepted = min(amount, supply) #accepted request
-                action[i, Symbol((a.src,a.dst))] = accepted #overwrite request to comply with constraints
                 if amount > supply
-                    @warn "Replenishment request for product $p to node $(a.src) was reduced by $(amount - action[i,Symbol((a.src,a.dst))]) due to insufficient inventory."
+                    @warn "Replenishment request for product $p to node $(a[1]) was reduced by $(amount - accepted) due to insufficient inventory."
                 end
                 if accepted > 0 #subtract sent onhand inventory, add sent pipeline inventory
                     x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
-                                  (x.inv_on_hand.node .== a.src) .&
+                                  (x.inv_on_hand.node .== a[1]) .&
                                   (x.inv_on_hand.product .== p), :level] .-= accepted
                     x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
                                    (string.(x.inv_pipeline.arc) .== string(a)) .&
@@ -59,12 +70,12 @@ function (x::SupplyChainEnv)(action)
             end
             #store shipments and lead times
             if accepted > 0
-                lead = leads[a] + prod_time
-                push!(x.shipments, [(a.src,a.dst), p, accepted, lead]) #update active shipments
+                lead = leads[Edge(a[1],a[end])] + prod_time
+                push!(x.shipments, [a, p, accepted, lead]) #update active shipments
             else
                 lead = 0 #no request made
             end
-            push!(x.replenishments, [x.period, (a.src,a.dst), p, accepted, lead])
+            push!(x.replenishments, [x.period, a, p, accepted, lead])
         end
     end
 
@@ -177,34 +188,74 @@ function (x::SupplyChainEnv)(action)
     x.reward = sum(filter(j -> j.period == x.period, x.profit).value)
 end
 
-function policy(env::SupplyChainEnv, param::DataFrame, level::Symbol = :position)
+function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
+                level::Symbol = :position, kind::Symbol = :rQ)
     t = env.period
     nodes = union(env.distributors, env.markets)
-    action = DataFrame(:product => env.products,
-                       [Symbol((a.src,a.dst)) => zeros(length(env.products)) for a in edges(env.network)]...)
+    arcs = [(e.src, e.dst) for e in edges(env.network)]
     prods = env.products
-    ub = names(param)[3]
-    for n in nodes, p in prods
+    action = zeros(length(prods), length(arcs))
+    for n in nodes, (k, p) in enumerate(prods)
         if level == :on_hand
             state = filter(i -> i.period == t && i.node == n && i.product == p, env.inv_on_hand).level[1]
         elseif level == :position
             state = filter(i -> i.period == t && i.node == n && i.product == p, env.inv_position).level[1]
         end
-        trigger_level = filter(i -> i.product == p, param)[1,2]
-        ub_level = filter(i -> i.product == p, param)[1,2]
-        trigger = trigger_level > state
+        trigger = param1[p] > state
         reorder = 0
-        if ub == "Q" #rQ policy
-            reorder = ub_level
-        elseif ub == "S" #sS policy
-            reorder = max(ub_level - state, 0)
+        if kind == :rQ #rQ policy
+            reorder = param2[p]
+        elseif kind == :sS #sS policy
+            reorder = max(param2[p] - state, 0)
         end
 
         suppliers = length(inneighbors(env.network, n))
         for src in inneighbors(env.network, n)
-            action[action.product .== p, Symbol((src,n))] .= reorder / suppliers #equal split
+            j = findfirst(i -> i == (src, n), arcs)
+            action[k, j] = reorder / suppliers #equal split
         end
     end
 
     return action
+end
+
+function action_space(env::SupplyChainEnv)
+    num_products = length(env.products)
+    num_edges = ne(env.network)
+    num_actions = num_products * num_edges
+    ubound = []
+    for n in vertices(env.network)
+        set_prop!(env.network, n, :max_order, Dict(p => 0. for p in env.products))
+    end
+    for (source, sink) in Iterators.product(env.producers,env.markets)
+        paths = yen_k_shortest_paths(env.network, source, sink, weights(env.network), typemax(Int)).paths
+        for path in paths
+            capacity = get_prop(env.network, path[1], :production_capacity)
+            for i in 2:length(path)
+                top_max_order = get_prop(env.network, path[i-1], :max_order)
+                if i > 2
+                    top_init_inv = get_prop(env.network, path[i-1], :initial_inventory)
+                end
+                max_order = get_prop(env.network, path[i], :max_order)
+                for p in env.products
+                    if i == 2
+                        max_order[p] += capacity[p]
+                    elseif i == 3
+                        max_order[p] += top_init_inv[p] + top_max_order[p] * env.num_periods
+                    else
+                        max_order[p] += top_init_inv[p] + top_max_order[p]
+                    end
+                end
+                set_prop!(env.network, path[i], :max_order, max_order)
+            end
+        end
+    end
+    for e in edges(env.network)
+        max_order = get_prop(env.network, e.dst, :max_order)
+        for p in env.products
+            push!(ubound, max_order[p])
+        end
+    end
+
+    ClosedInterval.(zeros(num_actions), ubound)
 end

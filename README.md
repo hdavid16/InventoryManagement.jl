@@ -46,11 +46,11 @@ The following sequence of events occurs in each period of the simulation:
 - `:production_time::Dict`: production lead time for each product (`keys`).
 
 `Distributors` will have the following fields in their node metadata:
-- `:init_inventory::Dict`: initial inventory for each product (`keys`)
+- `:initial_inventory::Dict`: initial inventory for each product (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each product (`keys`)
 
 `Markets` will have the following fields in their node metadata:
-- `:init_inventory::Dict`: initial inventory for each product (`keys`)
+- `:initial_inventory::Dict`: initial inventory for each product (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each product (`keys`)
 - `:demand_distribution::Dict`: probability distributions for the market demands for each product (`keys`)
 - `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each product (`keys`)
@@ -64,7 +64,7 @@ All edges have the following fields in their metadata:
 - `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each product (`keys`)
 - `:lead_time::Distribution{Univariate, Discrete}`: the lead time on each edge
 
-## `SupplyChainEnv`
+## Model Output
 
 A `SupplyChainEnv` has the following fields:
 - `network::MetaDiGraph`: Supply Chain Network (metagraph)
@@ -112,7 +112,7 @@ set_props!(net, 2, Dict(:production_cost => Dict(p => 0.01 for p in products),
                         :production_time => Dict(p => 1 for p in products),
                         :production_capacity => Dict(p => Inf for p in products)))
 
-set_props!(net, 3, Dict(:init_inventory => Dict(p => 10 for p in products),
+set_props!(net, 3, Dict(:initial_inventory => Dict(p => 10 for p in products),
                         :holding_cost => Dict(p => 0.01 for p in products),
                         :demand_distribution => Dict(p => Normal(5,0.5) for p in products),
                         :demand_frequency => Dict(p => 0.5 for p in products),

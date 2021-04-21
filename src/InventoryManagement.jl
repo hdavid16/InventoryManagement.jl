@@ -1,10 +1,12 @@
 module InventoryManagement
 
-using LightGraphs, MetaGraphs, DataFrames, Distributions, Random
+using DataFrames
+using LightGraphs, MetaGraphs
+using Distributions, IntervalSets, Random
 
 include("environment.jl")
 include("actions.jl")
 
-export SupplyChainEnv, policy
+export SupplyChainEnv, reorder_policy, reset!, is_terminated, action_space, show_action
 
 end
