@@ -6,10 +6,6 @@ adjmx = [0 0 1;
          0 0 1;
          0 0 0]
 net = MetaDiGraph(adjmx)
-#define node types (**can be inferred**)
-set_prop!(net, 1, :type, :producer)
-set_prop!(net, 2, :type, :producer)
-set_prop!(net, 3, :type, :distributor)
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_prop!(net, 1, :params,
             DataFrame("product" => ["A", "B", "C", "D", "E"],

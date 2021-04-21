@@ -11,6 +11,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     inv_position::DataFrame #Timeseries Inventory Position for each node
     replenishments::DataFrame #Timeseries Replenishment orders placed on each arc
     shipments::DataFrame #Current shipments and time to arrival for each node
+    production::DataFrame #Current material production commited to an arc and time to ship
     demand::DataFrame #Timeseries with realization of demand at each market
     profit::DataFrame #Timeseries with profit at each node
     reward::Float64 #Final reward in the system (used for RL)
@@ -22,7 +23,8 @@ mutable struct SupplyChainEnv <: AbstractEnv
 end
 
 function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        backlog::Bool=true, discount::Float64=0.0)
+                        backlog::Bool=true, discount::Float64=0.0,
+                        seed::Int=0)
     #perform checks
         #order of products in init_inventory, production_capacity, market_demand and demand_frequency keys must be the same
 
@@ -32,45 +34,50 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     arcs = [(e.src,e.dst) for e in edges(network)]
     #get end distributors, producers, and distribution centers
     mrkts = [n for n in nodes if isempty(outneighbors(network,n))]
-    plants = [n for n in nodes if !all(ismissing.(get_prop(network, n, :params).production_capacity))]
+    plants = [n for n in nodes if isempty(inneighbors(network,n))] #assumes plants are at the top
     dcs = setdiff(nodes, mrkts, plants)
     #get products
-    prods = get_prop(network, nodes[1], :params).product
+    prods = get_prop(network, :products)
     #create logging dataframes
-    inv_on_hand = DataFrame("period" => zeros(Int, length(prods)*length(nodes)),
-                            "node" => repeat(nodes, inner = length(prods)),
-                            "product" => repeat(prods, outer = length(nodes)),
-                            "level" => collect(Iterators.flatten([float.(get_prop(network, n, :params).init_inventory) for n in nodes])))
-    inv_pipeline = DataFrame("period" => zeros(Int, length(prods)*length(arcs)),
-                             "arc" => repeat(arcs, inner = length(prods)),
-                             "product" => repeat(prods, outer = length(arcs)),
-                             "level" => zeros(length(prods)*length(arcs)))
+    inv_on_hand = DataFrame(:period => Int[], :node => Int[], :product => [], :level => Float64[])
+    for n in setdiff(nodes, plants), p in prods
+        init_inv = get_prop(network, n, :init_inventory)
+        push!(inv_on_hand, (0, n, p, init_inv[p]))
+    end
+    inv_pipeline = DataFrame(:period => zeros(Int, length(prods)*length(arcs)),
+                             :arc => repeat(arcs, inner = length(prods)),
+                             :product => repeat(prods, outer = length(arcs)),
+                             :level => zeros(length(prods)*length(arcs)))
     inv_position = copy(inv_on_hand)
-    replenishments = DataFrame("period" => zeros(Int, length(prods)*length(arcs)),
-                               "arc" => repeat(arcs, inner = length(prods)),
-                               "product" => repeat(prods, outer = length(arcs)),
-                               "amount" => zeros(length(prods)*length(arcs)),
-                               "lead" => zeros(Int, length(prods)*length(arcs)))
-    shipments = DataFrame("arc" => [],
-                          "product" => [],
-                          "amount" => Float64[],
-                          "lead" => Int[])
-    demand = DataFrame("period" => zeros(Int, length(prods)*length(mrkts)),
-                       "market" => repeat(mrkts, inner = length(prods)),
-                       "product" => repeat(prods, outer = length(mrkts)),
-                       "demand" => zeros(length(prods)*length(mrkts)),
-                       "sale" => zeros(length(prods)*length(mrkts)),
-                       "unfulfilled" => zeros(length(prods)*length(mrkts)),
-                       "backlog" => zeros(length(prods)*length(mrkts)))
-    profit = DataFrame("period" => zeros(Int, length(nodes)),
-                       "value" => zeros(length(nodes)),
-                       "node" => nodes)
+    replenishments = DataFrame(:period => zeros(Int, length(prods)*length(arcs)),
+                               :arc => repeat(arcs, inner = length(prods)),
+                               :product => repeat(prods, outer = length(arcs)),
+                               :amount => zeros(length(prods)*length(arcs)),
+                               :lead => zeros(Int, length(prods)*length(arcs)))
+    shipments = DataFrame(:arc => [],
+                          :product => [],
+                          :amount => Float64[],
+                          :lead => Int[])
+    production = DataFrame(:arc => [],
+                           :product => [],
+                           :amount => Float64[],
+                           :lead => Int[])
+    demand = DataFrame(:period => zeros(Int, length(prods)*length(mrkts)),
+                       :node => repeat(mrkts, inner = length(prods)),
+                       :product => repeat(prods, outer = length(mrkts)),
+                       :demand => zeros(length(prods)*length(mrkts)),
+                       :sale => zeros(length(prods)*length(mrkts)),
+                       :unfulfilled => zeros(length(prods)*length(mrkts)),
+                       :backlog => zeros(length(prods)*length(mrkts)))
+    profit = DataFrame(:period => zeros(Int, length(nodes)),
+                       :value => zeros(length(nodes)),
+                       :node => nodes)
     reward = 0
     period = 0
     num_periods = num_periods
     SupplyChainEnv(network, mrkts, plants, dcs, prods, inv_on_hand, inv_pipeline, inv_position,
-                    replenishments, shipments, demand,
-                    profit, reward, period, num_periods, backlog, discount)
+                    replenishments, shipments, production, demand,
+                    profit, reward, period, num_periods, backlog, discount, seed)
 end
 
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
