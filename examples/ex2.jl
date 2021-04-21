@@ -1,12 +1,12 @@
 using LightGraphs, MetaGraphs, DataFrames, Distributions
-using InventoryManagement, StatsPlots
+using InventoryManagement, Plots
 
 #define network connectivity
 adjmx = [0 0 1;
          0 0 1;
          0 0 0]
 net = MetaDiGraph(adjmx)
-products = [:A, :B, :C, :D, :E]
+products = [:A]
 set_prop!(net, :products, products)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
@@ -34,20 +34,15 @@ set_props!(net, 2, 3, Dict(:sales_price => Dict(p => 2 for p in products),
                           :transportation_cost => Dict(p => 0.01 for p in products),
                           :lead_time => Poisson(5)))
 
-#create environment
 env = SupplyChainEnv(net, 30)
 
-#define action
 action = DataFrame(:product=>products,
                    [Symbol((a.src,a.dst)) => rand(5)*5 for a in edges(env.network)]...)
 
-#run simulation
 for t in 1:env.num_periods
     (env)(action)
 end
 
-#make plots
-#profit
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
 fig = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
