@@ -180,26 +180,29 @@ end
 function policy(env::SupplyChainEnv, param::DataFrame, level::Symbol = :position)
     t = env.period
     nodes = union(env.distributors, env.markets)
-    action = DataFrame(:product => env.products)
-    for n in nodes
+    action = DataFrame(:product => env.products,
+                       [Symbol((a.src,a.dst)) => zeros(length(env.products)) for a in edges(env.network)]...)
+    prods = env.products
+    ub = names(param)[3]
+    for n in nodes, p in prods
         if level == :on_hand
-            state = filter(i -> i.period == t && i.node == n, env.inv_on_hand)[:,["product", "level"]]
+            state = filter(i -> i.period == t && i.node == n && i.product == p, env.inv_on_hand).level[1]
         elseif level == :position
-            state = filter(i -> i.period == t && i.node == n, env.inv_position)[:,["product", "level"]]
+            state = filter(i -> i.period == t && i.node == n && i.product == p, env.inv_position).level[1]
         end
-        df = leftjoin(param, state, on="product")
-        df.trigger = df[:,2] .> df.level #detect trigger on inventory
-        ub = names(param)[3]
-        df.reorder = zeros(nrow(df))
+        trigger_level = filter(i -> i.product == p, param)[1,2]
+        ub_level = filter(i -> i.product == p, param)[1,2]
+        trigger = trigger_level > state
+        reorder = 0
         if ub == "Q" #rQ policy
-            df.reorder = df.trigger .* df.Q
+            reorder = ub_level
         elseif ub == "S" #sS policy
-            df.reorder = df.trigger .* (df.S .- df.level)
+            reorder = max(ub_level - state, 0)
         end
 
         suppliers = length(inneighbors(env.network, n))
         for src in inneighbors(env.network, n)
-            action[:, Symbol((src,n))] = df.reorder / suppliers #equal split
+            action[action.product .== p, Symbol((src,n))] .= reorder / suppliers #equal split
         end
     end
 

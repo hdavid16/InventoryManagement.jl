@@ -1,12 +1,12 @@
 using LightGraphs, MetaGraphs, DataFrames, Distributions
-using InventoryManagement, StatsPlots
+using InventoryManagement, Plots
 
 #define network connectivity
 adjmx = [0 0 1;
          0 0 1;
          0 0 0]
 net = MetaDiGraph(adjmx)
-products = [:A, :B, :C, :D, :E]
+products = [:A]
 set_prop!(net, :products, products)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
@@ -45,11 +45,30 @@ end
 
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
-@df profit plot(:period, :value_cumsum, group=:node)
-
-# action = DataFrame(:product=>products,
-#                    [Symbol((a.src,a.dst)) => rand(5)*5 for a in edges(env.network)]...,
-#                    [Symbol(n) =>
-#                         [rand(Uniform(0,get_prop(env.network, n, :production_capacity)[p]))
-#                             for p in products]
-#                         for n in env.producers]...)
+fig = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
+                    xlabel="period", ylabel="cumulative profit")
+display(fig)
+#on hand inventory
+onhand = filter(i -> i.node in union(env.distributors, env.markets), env.inv_on_hand)
+fig = @df onhand plot(:period, :level, group=(:node, :product), linetype=:steppost,
+                    xlabel="period", ylabel="on hand inventory level")
+display(fig)
+#inventory position
+position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
+fig = @df position plot(:period, :level, group=(:node, :product), linetype=:steppost,
+                    xlabel="period", ylabel="inventory position")
+display(fig)
+#production
+production = filter(i -> i.arc[1] in env.producers, env.replenishments)
+transform!(production, :arc .=> ByRow(y -> y[1]) .=> :plant)
+fig = @df production plot(:period, :amount, group=(:plant,:product), linetype=:steppost,
+                xlabel="period", ylabel="units produced")
+display(fig)
+#demand profile
+demand = filter(i -> i.node in env.markets, env.demand)
+fig = @df demand plot(:period, :demand, group=:product, linetype=:steppost,
+                xlabel="period", ylabel="demand")
+display(fig)
+fig = @df demand plot(:period, :unfulfilled, group=:product, legend=:topleft, linetype=:steppost,
+                xlabel="period", ylabel="unfulfilled demand")
+display(fig)
