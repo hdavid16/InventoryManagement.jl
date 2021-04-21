@@ -5,9 +5,9 @@ Discrete-time simulation environment for Inventory Management in Supply Networks
 ## Overview
 
 *InventoryManagement.jl* allows defining a supply network with three main actors:
-- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced).
-- `Distributors`: Nodes where inventory is stored and distributed (e.g., distribution centers and retailers).
-- `Markets`: Associated with each end `distributor` in the network where end-customers place final product orders.
+- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). These are the top-most (source) nodes in the network.
+- `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
+- `Markets`: Nodes where end-customers place final product orders. These are the last  (sink) nodes in the network.
 
 A `SupplyChainEnv` object is created based on system inputs and network structure, which can be used to simulate stochastic demand at the end distribution centers and inventory replenishment decisions throughout the network. The `SupplyChainEnv` can be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
 
@@ -24,15 +24,15 @@ This package generalizes and extends and the inventory management environment av
 
 The following sequence of events occurs in each period of the simulation:
 1. Start period.
-2. Place inventory replenishment orders. These are limited to the available production capacity (supplier is a producer) or available inventory (supplier is a distribution node).
+2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory (supplier is a distribution node).
    - Distributors ship inventory.
-   - Producers manufacture products (a production lead time is assessed). Production costs are incurred at the start of production.
+   - Producers manufacture products (a production lead time begins). Production costs are incurred at the start of production.
    - Producers send orders that have completed (after the production lead time).
 4. Receive inventory that has arrived at each node (after the lead time has transpired).
 5. Pay suppliers for inventory received.
 6. Pay shipper for inventory shipped.
-7. Market demand occurs after tossing a weighted coin with the probability of demand occuring defined by the `demand_frequency`.
-8. Demand is fulfilled up to available inventory at the end distributors.
+7. Market demand occurs after tossing a weighted coin with the probability of demand occurring defined by the `demand_frequency`.
+8. Demand (including any backlog if `backlog = true`) is fulfilled up to available inventory at the markets.
 9. Unfulfilled demand is penalized and backlogged (if `backlog = true`).
 10. Each node pays a holding cost and a transportation cost for on-hand inventory and in-transit inventory at each period.
 
@@ -40,39 +40,44 @@ The following sequence of events occurs in each period of the simulation:
 
 ### Node-specific
 
-A `DataFrame` is stored in the metadata of each node using the key `:params` with the following fields:
-- `"product"::Vector{String}`: product names
-- `"init_inventory"::Vector{Float64}`: initial inventories for each product
-- `"holding_cost"::Vector{Float64}`: unit holding cost for each product
-- `"production_cost"::Vector{Float64}`: unit production cost for each product
-- `"production_capacity"::Vector{Float64}`: maximum production capacity for each product (use `Inf` for uncapacitated production)
-- `"market_demand"::Vector{Sampleable}`: probability distributions for the market demands for each product
-- `"demand_frequency"::Vector{Float64}`: probability that demand will occur (value between `0.0` and `1.0`)
-- `"market_price"::Vector{Float64}`: sales price for each product at the end distributor
-- `"demand_penalty"::Vector{Float64}`: unit penalty for unsatisfied demand
+`Producers` will have the following fields in their node metadata:
+- `:production_cost::Dict`: unit production cost for each product (`keys`)
+- `:production_capacity::Dict`: maximum production capacity for each product (`keys`).
+- `:production_time::Dict`: production lead time for each product (`keys`).
+
+`Distributors` will have the following fields in their node metadata:
+- `:init_inventory::Dict`: initial inventory for each product (`keys`)
+- `:holding_cost::Dict`: unit holding cost for each product (`keys`)
+
+`Markets` will have the following fields in their node metadata:
+- `:init_inventory::Dict`: initial inventory for each product (`keys`)
+- `:holding_cost::Dict`: unit holding cost for each product (`keys`)
+- `:demand_distribution::Dict`: probability distributions for the market demands for each product (`keys`)
+- `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each product (`keys`)
+- `:sales_price::Dict`: market sales price for each product (`keys`)
+- `:demand_penalty::Dict`: unit penalty for unsatisfied market demand for each product (`keys`)
 
 ### Edge-specific
 
-A `DataFrame` is stored in the metadata of each node using the key `:params` with the following fields:
-- `"product"::Vector{String}`: product names
-- `"sales_price"::Vector{Float64}`: unit sales price for inventory sent on that edge (from supplier to receiver)
-- `"transportation_cost"::Vector{Float64}`: unit transportation cost per period for inventory in-transit
-
-A `Univariate Discrete Distribution` is also defined for the lead time on each edge and stored using the key `:lead_time`.
+All edges have the following fields in their metadata:
+- `:sales_price::Dict`: unit sales price for inventory sent on that edge (from supplier to receiver) for each product (`keys`)
+- `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each product (`keys`)
+- `:lead_time::Distribution{Univariate, Discrete}`: the lead time on each edge
 
 ## `SupplyChainEnv`
 
 A `SupplyChainEnv` has the following fields:
 - `network::MetaDiGraph`: Supply Chain Network (metagraph)
-- `markets::Array`: list of markets (end distributors)
+- `markets::Array`: list of market nodes
 - `producers::Array`: list of producer nodes
-- `distributors::Array`: list of distribution centers (excludes end distributors where markets exist)
+- `distributors::Array`: list of distribution nodes (excludes end distributors where markets exist)
 - `products::Array`: list of product names (strings)
 - `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node at the end of each period
 - `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
 - `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
 - `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
 - `shipments::DataFrame`: current shipments and time to arrival for each node
+- `production::DataFrame`: current material production committed to an edge and lead time to ship
 - `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
 - `profit::DataFrame`: timeseries with profit at each node
 - `reward::Float64`: reward in the system (used for RL)
