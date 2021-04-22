@@ -38,6 +38,31 @@ The following sequence of events occurs in each period of the simulation:
 9. Unfulfilled demand is penalized and backlogged (if `backlog = true`).
 10. Each node pays a holding cost and a transportation cost for on-hand inventory and in-transit inventory at each period.
 
+## Model Assumptions
+
+The following assumptions hold in the current implementation, but can be modified in future releases.
+
+- `Producers` do not hold inventory.
+- `Producers` have unlimitted supply of raw materials.
+- `Producers` can produce material on demand.
+- Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
+- Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
+
+## Inventory replenishment policies
+
+At each iteration in the simulation, an `action` can be provided to the system, which consists of the replenishment orders placed on every link in the supply network. This `action` must be of type `Vector{Real}` and must be `nonnegative` of the form: `[Edge1_Product1, Edge1_Product2, ..., Edge1_ProductP, Edge2_Product1, ..., Edge2_ProductP, ..., EdgeE_Product1, ..., EdgeE_ProductP]`, where the ordering in the edges is given by `edges(env.network)` and the ordering in the products by `env.products`.
+
+The function `reorder_policy` can be used to implement an inventory reorder policy. The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
+
+The `reorder_policy` takes the following inputs and returns an `action` vector.
+- `env::SupplyChainEnv`: inventory management environment
+- `param1::Dict`: the `s` or `r` parameter in each node for each product in the system. The `keys` are of the form `(node, product)`.
+- `param2::Dict`: the `S` or `Q` parameter in each node for each product in the system. The `keys` are of the form `(node, product)`.
+- `level::Symbol`: `:position` if the policy is based on the node's inventory position, or `:on_hand` if the policy is based on the node's on-hand inventory level.
+- `kind::Symbol`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy
+
+If a node has more than 1 supplier, the reorder quantities are currently split evenly among the suppliers. This can be customizable in a future release.
+
 ## Model Inputs
 
 ### Node-specific
@@ -126,8 +151,8 @@ env = SupplyChainEnv(net, num_periods)
 #define reorder policy parameters
 policy = :sS #(s, S) policy
 on = :position #monitor inventory position
-s = Dict(:A => 20) #lower bound on inventory
-S = Dict(:A => 100) #base stock level
+s = Dict((2,:A) => 20) #lower bound on inventory
+S = Dict((2,:A) => 100) #base stock level
 
 #run simulation with reorder policy
 for t in 1:env.num_periods
@@ -143,8 +168,8 @@ fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
-fig2 = @df position plot(:period, :level, group=(:node, :product), linetype=:steppost,
+inv_position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
+fig2 = @df inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
 ```
 ![](examples/figs/ex1_profit.png)

@@ -30,8 +30,8 @@ env = SupplyChainEnv(net, num_periods)
 #define reorder policy parameters
 policy = :sS #(s, S) policy
 on = :position #monitor inventory position
-s = Dict(:A => 20) #lower bound on inventory
-S = Dict(:A => 100) #base stock level
+s = Dict((2,:A) => 20) #lower bound on inventory
+S = Dict((2,:A) => 100) #base stock level
 
 #run simulation with reorder policy
 for t in 1:env.num_periods
@@ -43,30 +43,10 @@ end
 #profit
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
-fig = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
+fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
                     xlabel="period", ylabel="cumulative profit")
-display(fig)
-#on hand inventory
-onhand = filter(i -> i.node in union(env.distributors, env.markets), env.inv_on_hand)
-fig = @df onhand plot(:period, :level, group=(:node, :product), linetype=:steppost,
-                    xlabel="period", ylabel="on hand inventory level")
-display(fig)
+
 #inventory position
-position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
-fig = @df position plot(:period, :level, group=(:node, :product), linetype=:steppost,
+inv_position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
+fig2 = @df inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
-display(fig)
-#production
-production = filter(i -> i.arc[1] in env.producers, env.replenishments)
-transform!(production, :arc .=> ByRow(y -> y[1]) .=> :plant)
-fig = @df production plot(:period, :amount, group=(:plant,:product), linetype=:steppost,
-                xlabel="period", ylabel="units produced")
-display(fig)
-#demand profile
-demand = filter(i -> i.node in env.markets, env.demand)
-fig = @df demand plot(:period, :demand, group=:product, linetype=:steppost,
-                xlabel="period", ylabel="demand")
-display(fig)
-fig = @df demand plot(:period, :unfulfilled, group=:product, legend=:topleft, linetype=:steppost,
-                xlabel="period", ylabel="unfulfilled demand")
-display(fig)

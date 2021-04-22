@@ -6,8 +6,9 @@ function show_action(action, env)
                    [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
 end
 
-function (x::SupplyChainEnv)(action)
+function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
     #validate action input (i.e., type = DataFrame, fields = ["product" => String, "Arc_i_j (same order as edges(network))" => Float64])
+    @assert all(action .>= 0) "Reorder action cannot be negative."
 
     #increase period counter
     x.period += 1
@@ -190,6 +191,7 @@ end
 
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                 level::Symbol = :position, kind::Symbol = :rQ)
+    @assert kind in [:rQ, :sS] "The policy kind must be either `:rQ` or `:sS`."
     t = env.period
     nodes = union(env.distributors, env.markets)
     arcs = [(e.src, e.dst) for e in edges(env.network)]
@@ -201,13 +203,13 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         elseif level == :position
             state = filter(i -> i.period == t && i.node == n && i.product == p, env.inv_position).level[1]
         end
-        trigger = param1[p] > state
+        trigger = param1[n,p] > state
         reorder = 0
         if trigger
             if kind == :rQ #rQ policy
-                reorder = param2[p]
+                reorder = param2[n,p]
             elseif kind == :sS #sS policy
-                reorder = max(param2[p] - state, 0)
+                reorder = max(param2[n,p] - state, 0)
             end
         else
             reorder = 0
@@ -220,7 +222,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         end
     end
 
-    return action
+    collect(Iterators.flatten(action))
 end
 
 function action_space(env::SupplyChainEnv)
