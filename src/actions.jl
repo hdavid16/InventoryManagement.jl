@@ -83,12 +83,13 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
                 unfulfilled = amount - accepted #amount not accepted
                 if unfulfilled > 0 #reallocate unfulfilled request to next priority supplier
                     @warn "Replenishment request made by node $(a[2]) to node $(a[1]) for product $p was reduced from $amount to $accepted due to insufficient production capacity or insufficient inventory."
-                    sup_priority = get_prop(x.network, a[2], :supplier_priority)[p] #get priority list
-                    next_sup = findfirst(k -> k == a[1], sup_priority) + 1 #get next in line
-                    if next_sup <= length(sup_priority) #check that there is a next one in line
-                        @warn "Reallocating non-accepted request for node $(a[2]) for product $p to node $next_sup (amount = $unfulfilled)"
-                        jj = findfirst(k -> k == (next_sup, a[2]), arcs) #find index for that arc in the action matrix
-                        act[i,jj] += unfulfilled #add unfulfilled to the next supplier in the line
+                    if x.reallocate
+                        next_sup = findfirst(k -> k == a[1], sup_priority) + 1 #get next in line
+                        if next_sup <= length(sup_priority) #check that there is a next one in line
+                            @warn "Reallocating non-accepted request for node $(a[2]) for product $p to node $next_sup (amount = $unfulfilled)"
+                            jj = findfirst(k -> k == (next_sup, a[2]), arcs) #find index for that arc in the action matrix
+                            act[i,jj] += unfulfilled #add unfulfilled to the next supplier in the line
+                        end
                     end
                 end
 

@@ -17,13 +17,15 @@ mutable struct SupplyChainEnv <: AbstractEnv
     reward::Float64 #Final reward in the system (used for RL)
     period::Int #period in the simulation
     num_periods::Int #number of periods in the simulation
-    backlog::Bool #Backlogging allowed if true; otherwise, lost sales
     discount::Float64 #Time discount factor
+    backlog::Bool #Backlogging allowed if true; otherwise, lost sales
+    reallocate::Bool #reallocate unfulfilled requests if true
     seed::Int #Random seed
 end
 
 function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        backlog::Bool=true, discount::Float64=0.0,
+                        discount::Float64=0.0, backlog::Bool=true,
+                        reallocate::Bool=true,
                         seed::Int=0)
     #perform checks
         #order of products in initial_inventory, production_capacity, market_demand and demand_frequency keys must be the same
@@ -113,7 +115,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     num_periods = num_periods
     SupplyChainEnv(network, mrkts, plants, dcs, prods, inv_on_hand, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
-                    profit, reward, period, num_periods, backlog, discount, seed)
+                    profit, reward, period, num_periods, discount, backlog, reallocate, seed)
 end
 
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)

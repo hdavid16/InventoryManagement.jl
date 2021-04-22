@@ -17,16 +17,16 @@ This package generalizes and extends and the inventory management environment av
 
 ## Dependencies
 
-*InventoryManagement.jl* relies on the following packages:
+*InventoryManagement.jl* mainly relies on the following packages:
 - [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Define supply network structure and specify node- and edge-specific parameters.
-- [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results and specify most network parameters.
+- [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results.
 - [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the market demands at the end distributors.
 
 ## Sequence of Events
 
 The following sequence of events occurs in each period of the simulation:
 1. Start period.
-2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory (supplier is a distribution node).
+2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory (supplier is a distribution node). If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next priority supplier.
    - Distributors ship inventory.
    - Producers manufacture products (a production lead time begins). Production costs are incurred at the start of production.
    - Producers send orders that have completed (after the production lead time).
@@ -44,7 +44,7 @@ The following assumptions hold in the current implementation, but can be modifie
 
 - `Producers` do not hold inventory.
 - `Producers` have unlimitted supply of raw materials.
-- `Producers` can produce material on demand.
+- `Producers` can produce material on demand (`make-to-order`).
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
 
@@ -76,10 +76,12 @@ If a node has more than 1 supplier, the reorder quantities are currently split e
 `Distributors` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each product (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each product (`keys`)
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each product (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 
 `Markets` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each product (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each product (`keys`)
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each product (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 - `:demand_distribution::Dict`: probability distributions for the market demands for each product (`keys`)
 - `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each product (`keys`)
 - `:sales_price::Dict`: market sales price for each product (`keys`)
@@ -111,8 +113,9 @@ A `SupplyChainEnv` has the following fields:
 - `reward::Float64`: reward in the system (used for RL)
 - `period::Int`: period in the simulation
 - `num_periods::Int`: number of periods in the simulation
-- `backlog::Bool`: backlogging allowed if true; otherwise, unfulfilled demand is lost sales
 - `discount::Float64`: time discount factor (interest rate)
+- `backlog::Bool`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales
+- `reallocate::Bool`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
 - `seed::Int`: random seed
 
 ## Example
@@ -129,20 +132,21 @@ products = [:A]
 set_prop!(net, :products, products)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
-set_props!(net, 1, Dict(:production_cost => Dict(p => 0.01 for p in products),
-                        :production_time => Dict(p => 1 for p in products),
-                        :production_capacity => Dict(p => Inf for p in products)))
+set_props!(net, 1, Dict(:production_cost => Dict(:A => 0.01),
+                        :production_time => Dict(:A => 0),
+                        :production_capacity => Dict(:A => Inf)))
 
-set_props!(net, 2, Dict(:initial_inventory => Dict(p => 100 for p in products),
-                        :holding_cost => Dict(p => 0.01 for p in products),
-                        :demand_distribution => Dict(p => Normal(5,0.5) for p in products),
-                        :demand_frequency => Dict(p => 0.5 for p in products),
-                        :sales_price => Dict(p => 3 for p in products),
-                        :demand_penalty => Dict(p => 0.01 for p in products)))
+set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100),
+                        :holding_cost => Dict(:A => 0.01),
+                        :demand_distribution => Dict(:A => Normal(5,0.5)),
+                        :demand_frequency => Dict(:A => 0.5),
+                        :sales_price => Dict(:A => 3),
+                        :demand_penalty => Dict(:A => 0.01),
+                        :supplier_priority => Dict(:A => [1])))
 
 #specify sales prices, transportation costs, lead time
-set_props!(net, 1, 2, Dict(:sales_price => Dict(p => 2 for p in products),
-                          :transportation_cost => Dict(p => 0.01 for p in products),
+set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
+                          :transportation_cost => Dict(:A => 0.01),
                           :lead_time => Poisson(5)))
 
 #create environment
@@ -157,7 +161,7 @@ S = Dict((2,:A) => 100) #base stock level
 
 #run simulation with reorder policy
 for t in 1:env.num_periods
-    action = reorder_policy(env, s, S, on, policy)
+    action = reorder_policy(env, s, S, on, policy, :priority)
     (env)(action)
 end
 
@@ -172,6 +176,7 @@ fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
 inv_position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
 fig2 = @df inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
+
 ```
 ![](examples/figs/ex1_profit.png)
 ![](examples/figs/ex1_position.png)
