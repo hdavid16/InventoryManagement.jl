@@ -197,8 +197,11 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
     x.reward = sum(filter(j -> j.period == x.period, x.profit).value)
 end
 
+select_any_supplier(::T) where T = true
+
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                level::Symbol = :position, kind::Symbol = :rQ)
+                level::Symbol = :position, kind::Symbol = :rQ,
+                supplier_priority::Union{Missing, Dict} = missing)
 
     #read parameters
     t = env.period
@@ -212,6 +215,14 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     for n in nodes, p in prods
         @assert (n,p) in keys(param1) "The first policy parameter is missing a key for node $n and product $p."
         @assert (n,p) in keys(param2) "The second policy parameter is missing a key for node $n and product $p."
+    end
+    if !ismissing(supplier_priority)
+        for n in nodes
+            @assert n in keys(supplier_priority) "Node $n does not have a specified supplier priority."
+            for s in supplier_priority[n]
+                @assert s in inneighbors(env.network, n) "Supplier $s is not listed in the supplier priority for node $n."
+            end
+        end
     end
 
     #initialize action matrix
@@ -234,10 +245,24 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
             reorder = 0
         end
 
-        suppliers = length(inneighbors(env.network, n))
-        for src in inneighbors(env.network, n)
-            j = findfirst(i -> i == (src, n), arcs)
-            action[k, j] = reorder / suppliers #equal split
+        if ismissing(supplier_priority)
+            suppliers = length(inneighbors(env.network, n))
+            for src in inneighbors(env.network, n)
+                j = findfirst(i -> i == (src, n), arcs)
+                action[k, j] = reorder / suppliers #equal split
+            end
+        else
+            for src in supplier_priority[n]
+                if src in env.producers #find available capacity or inventory
+                    avail = get_prop(env.network, src, :production_capacity)[p]
+                else
+                    avail = filter(i -> i.period == env.period && i.node == src && i.product == p, env.inv_on_hand).level[1]
+                end
+                request = min(avail, reorder) #reorder up to the available amount
+                reorder -= request #update reorder quantity for next supplier
+                j = findfirst(i -> i == (src, n), arcs) #find index in action matrix
+                action[k, j] = request #sate request quantity
+            end
         end
     end
 

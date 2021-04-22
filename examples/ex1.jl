@@ -32,10 +32,11 @@ policy = :sS #(s, S) policy
 on = :position #monitor inventory position
 s = Dict((2,:A) => 20) #lower bound on inventory
 S = Dict((2,:A) => 100) #base stock level
+priority = Dict(2 => [1]) #supplier priority
 
 #run simulation with reorder policy
 for t in 1:env.num_periods
-    action = reorder_policy(env, s, S, on, policy)
+    action = reorder_policy(env, s, S, on, policy, priority)
     (env)(action)
 end
 

@@ -60,6 +60,7 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `param2::Dict`: the `S` or `Q` parameter in each node for each product in the system. The `keys` are of the form `(node, product)`.
 - `level::Symbol`: `:position` if the policy is based on the node's inventory position, or `:on_hand` if the policy is based on the node's on-hand inventory level.
 - `kind::Symbol`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy
+- `supplier_priority::Dict`: specifies a `Vector` of suppliers for each node. Reorder quantities are placed according on the supplier position in the `Vector` (e.g., if supplier 1 does not have enough capacity or inventory, then request as much as possible and then request any remaining amount from the next supplier, and so forth).
 
 If a node has more than 1 supplier, the reorder quantities are currently split evenly among the suppliers. This can be customizable in a future release.
 
