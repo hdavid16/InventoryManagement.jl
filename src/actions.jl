@@ -1,4 +1,4 @@
-function show_action(action, env)
+function show_action(action::Array, env::SupplyChainEnv)
     prods = env.products
     arcs = [(e.src, e.dst) for e in edges(env.network)]
     act = reshape(action, (length(prods), length(arcs)))
@@ -7,8 +7,9 @@ function show_action(action, env)
 end
 
 function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
-    #validate action input (i.e., type = DataFrame, fields = ["product" => String, "Arc_i_j (same order as edges(network))" => Float64])
-    @assert all(action .>= 0) "Reorder action cannot be negative."
+    #validate action input
+    @assert all(action .>= 0) "Reorder actions cannot be negative."
+    @assert length(action) == length(x.products)*ne(x.network) "Reorder action vector must have length num_products * num_edges."
 
     #increase period counter
     x.period += 1
@@ -198,11 +199,22 @@ end
 
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                 level::Symbol = :position, kind::Symbol = :rQ)
-    @assert kind in [:rQ, :sS] "The policy kind must be either `:rQ` or `:sS`."
+
+    #read parameters
     t = env.period
     nodes = union(env.distributors, env.markets)
     arcs = [(e.src, e.dst) for e in edges(env.network)]
     prods = env.products
+
+    #check inputs
+    @assert kind in [:rQ, :sS] "The policy kind must be either `:rQ` or `:sS`."
+    @assert level in [:position, :on_hand] "The policy monitoring level must be either `:position` or `:on_hand`."
+    for n in nodes, p in prods
+        @assert (n,p) in keys(param1) "The first policy parameter is missing a key for node $n and product $p."
+        @assert (n,p) in keys(param2) "The second policy parameter is missing a key for node $n and product $p."
+    end
+
+    #initialize action matrix
     action = zeros(length(prods), length(arcs))
     for n in nodes, (k, p) in enumerate(prods)
         if level == :on_hand

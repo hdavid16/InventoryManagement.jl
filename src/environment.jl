@@ -33,11 +33,42 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     #get main edges
     arcs = [(e.src,e.dst) for e in edges(network)]
     #get end distributors, producers, and distribution centers
-    mrkts = [n for n in nodes if isempty(outneighbors(network,n))]
+    mrkts = [n for n in nodes if isempty(outneighbors(network,n))] #assumes markets are at the bottom
     plants = [n for n in nodes if isempty(inneighbors(network,n))] #assumes plants are at the top
     dcs = setdiff(nodes, mrkts, plants)
     #get products
     prods = get_prop(network, :products)
+    #check inputs
+    market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
+    plant_keys = [:production_cost, :production_time, :production_capacity]
+    dcs_keys = [:initial_inventory, :holding_cost]
+    arc_keys = [:sales_price, :transportation_cost, :lead_time]
+    for n in mrkts, key in market_keys
+        @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
+        for p in prods
+            @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        end
+    end
+    for n in plants, key in plant_keys
+        @assert key in keys(network.vprops[n]) "$key not stored in producer node $n."
+        for p in prods
+            @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        end
+    end
+    for n in dcs, key in dcs_keys
+        @assert key in keys(network.vprops[n]) "$key not stored in distributor node $n."
+        for p in prods
+            @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        end
+    end
+    for a in arcs, key in arc_keys
+        @assert key in keys(network.eprops[Edge(a...)]) "$key not stored in arc $a."
+        if key != :lead_time
+            for p in prods
+                @assert p in keys(network.eprops[Edge(a...)][key]) "Product $p not found in $key on arc $a."
+            end
+        end
+    end
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :product => [], :level => Float64[])
     for n in setdiff(nodes, plants), p in prods
