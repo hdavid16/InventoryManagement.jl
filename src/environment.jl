@@ -39,9 +39,9 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     #get products
     prods = get_prop(network, :products)
     #check inputs
-    market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
+    market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :supplier_priority]
     plant_keys = [:production_cost, :production_time, :production_capacity]
-    dcs_keys = [:initial_inventory, :holding_cost]
+    dcs_keys = [:initial_inventory, :holding_cost, :supplier_priority]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in mrkts, key in market_keys
         @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
@@ -67,6 +67,11 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
             for p in prods
                 @assert p in keys(network.eprops[Edge(a...)][key]) "Product $p not found in $key on arc $a."
             end
+        end
+    end
+    for n in union(dcs, mrkts), p in prods
+        for s in network.vprops[n][:supplier_priority][p]
+            @assert s in inneighbors(network, n) "Supplier $s is not listed in the supplier priority for node $n for product $p."
         end
     end
     #create logging dataframes

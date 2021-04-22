@@ -44,47 +44,63 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
                         for n in x.distributors)
 
     #place requests
-    for i in 1:length(prods)
+    for i in 1:length(prods) #loop by products
         p = prods[i] #product requested
-        for (j,a) in enumerate(arcs)
-            amount = act[i,j] #amount requested
-            prod_time = 0 #initialize production time
-            #accept or adjust requests
-            if a[1] in x.producers
-                capacity = capacities[a[1]][p] #get production capacity
-                accepted = min(amount, capacity) #accepted request
-                capacities[a[1]][p] = capacity - accepted #update production capacity to account for commited capacity (handled first come first serve)
-                if amount > capacity
-                    @warn "Replenishment request for product $p to node $(a[1]) was reduced from $amount to $accepted due to insufficient production capacity."
+        for n in union(x.distributors, x.markets) #loop by nodes placing requests
+            sup_priority = get_prop(x.network, n, :supplier_priority)[p] #get supplier priority list
+            for sup in sup_priority #loop by supplier priority
+                a = (sup, n) #arc
+                j = findfirst(k -> k == a, arcs) #find index for that arc in the action matrix
+                amount = act[i,j] #amount requested
+                prod_time = 0 #initialize production time
+
+                #accept or adjust requests
+                if a[1] in x.producers
+                    capacity = capacities[a[1]][p] #get production capacity
+                    accepted = min(amount, capacity) #accepted request
+                    act[i,j] = accepted #update order quantity
+                    capacities[a[1]][p] = capacity - accepted #update production capacity to account for commited capacity (handled first come first serve)
+                    if accepted > 0 #schedule production
+                        prod_time = get_prop(x.network, a[1], :production_time)[p] #production time
+                        push!(x.production, (a, p, accepted, prod_time))
+                    end
+                else
+                    supply = filter(i -> i.product == p, inv_levels[a[1]]).level[1] #on_hand inventory at supplier
+                    accepted = min(amount, supply) #accepted request
+                    act[i,j] = accepted #update order quantity
+                    inv_levels[a[1]][inv_levels[a[1]].product .== p, :level] .= supply - accepted #update available inventory to account for commited inventory (handled first come first serve)
+                    if accepted > 0 #subtract sent onhand inventory, add sent pipeline inventory
+                        x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
+                                      (x.inv_on_hand.node .== a[1]) .&
+                                      (x.inv_on_hand.product .== p), :level] .-= accepted
+                        x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
+                                       (string.(x.inv_pipeline.arc) .== string(a)) .&
+                                       (x.inv_pipeline.product .== p), :level] .+= accepted
+                    end
                 end
-                if accepted > 0 #schedule production
-                    prod_time = get_prop(x.network, a[1], :production_time)[p] #production time
-                    push!(x.production, (a, p, accepted, prod_time))
+
+                #chekc if some was not accepted and reallocate
+                unfulfilled = amount - accepted #amount not accepted
+                if unfulfilled > 0 #reallocate unfulfilled request to next priority supplier
+                    @warn "Replenishment request made by node $(a[2]) to node $(a[1]) for product $p was reduced from $amount to $accepted due to insufficient production capacity or insufficient inventory."
+                    sup_priority = get_prop(x.network, a[2], :supplier_priority)[p] #get priority list
+                    next_sup = findfirst(k -> k == a[1], sup_priority) + 1 #get next in line
+                    if next_sup <= length(sup_priority) #check that there is a next one in line
+                        @warn "Reallocating non-accepted request for node $(a[2]) for product $p to node $next_sup (amount = $unfulfilled)"
+                        jj = findfirst(k -> k == (next_sup, a[2]), arcs) #find index for that arc in the action matrix
+                        act[i,jj] += unfulfilled #add unfulfilled to the next supplier in the line
+                    end
                 end
-            else
-                supply = filter(i -> i.product == p, inv_levels[a[1]]).level[1] #on_hand inventory at supplier
-                accepted = min(amount, supply) #accepted request
-                inv_levels[a[1]][inv_levels[a[1]].product .== p, :level] .= supply - accepted #update available inventory to account for commited inventory (handled first come first serve)
-                if amount > supply
-                    @warn "Replenishment request for product $p to node $(a[1]) was reduced from $amount to $accepted due to insufficient inventory."
+
+                #store shipments and lead times
+                if accepted > 0
+                    lead = leads[Edge(a[1],a[end])] + prod_time
+                    push!(x.shipments, [a, p, accepted, lead]) #update active shipments
+                else
+                    lead = 0 #no request made
                 end
-                if accepted > 0 #subtract sent onhand inventory, add sent pipeline inventory
-                    x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
-                                  (x.inv_on_hand.node .== a[1]) .&
-                                  (x.inv_on_hand.product .== p), :level] .-= accepted
-                    x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
-                                   (string.(x.inv_pipeline.arc) .== string(a)) .&
-                                   (x.inv_pipeline.product .== p), :level] .+= accepted
-                end
+                push!(x.replenishments, [x.period, a, p, accepted, lead])
             end
-            #store shipments and lead times
-            if accepted > 0
-                lead = leads[Edge(a[1],a[end])] + prod_time
-                push!(x.shipments, [a, p, accepted, lead]) #update active shipments
-            else
-                lead = 0 #no request made
-            end
-            push!(x.replenishments, [x.period, a, p, accepted, lead])
         end
     end
 
@@ -201,7 +217,7 @@ select_any_supplier(::T) where T = true
 
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                 level::Symbol = :position, kind::Symbol = :rQ,
-                supplier_priority::Union{Missing, Dict} = missing)
+                supplier_selection::Symbol = :priority)
 
     #read parameters
     t = env.period
@@ -215,14 +231,6 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     for n in nodes, p in prods
         @assert (n,p) in keys(param1) "The first policy parameter is missing a key for node $n and product $p."
         @assert (n,p) in keys(param2) "The second policy parameter is missing a key for node $n and product $p."
-    end
-    if !ismissing(supplier_priority)
-        for n in nodes
-            @assert n in keys(supplier_priority) "Node $n does not have a specified supplier priority."
-            for s in supplier_priority[n]
-                @assert s in inneighbors(env.network, n) "Supplier $s is not listed in the supplier priority for node $n."
-            end
-        end
     end
 
     #initialize action matrix
@@ -245,14 +253,15 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
             reorder = 0
         end
 
-        if ismissing(supplier_priority)
+        if supplier_selection == :random
             suppliers = length(inneighbors(env.network, n))
             for src in inneighbors(env.network, n)
                 j = findfirst(i -> i == (src, n), arcs)
                 action[k, j] = reorder / suppliers #equal split
             end
-        else
-            for src in supplier_priority[n]
+        elseif supplier_selection == :priority
+            supplier_priority = get_prop(env.network, n, :supplier_priority)[p]
+            for src in supplier_priority
                 if src in env.producers #find available capacity or inventory
                     avail = get_prop(env.network, src, :production_capacity)[p]
                 else
