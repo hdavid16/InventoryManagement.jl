@@ -1,4 +1,4 @@
-function show_action(action::Array, env::SupplyChainEnv)
+function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
     prods = env.products
     arcs = [(e.src, e.dst) for e in edges(env.network)]
     act = reshape(action, (length(prods), length(arcs)))
@@ -6,7 +6,7 @@ function show_action(action::Array, env::SupplyChainEnv)
                    [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
 end
 
-function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
+function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #validate action input
     @assert all(action .>= 0) "Reorder actions cannot be negative."
     @assert length(action) == length(x.products)*ne(x.network) "Reorder action vector must have length num_products * num_edges."
