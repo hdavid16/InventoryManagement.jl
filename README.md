@@ -6,12 +6,16 @@
 
 ## Overview
 
-*InventoryManagement.jl* allows defining a supply network with three main actors:
+*InventoryManagement.jl* allows modeling a [make-to-order](en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
 - `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). These are the top-most (source) nodes in the network.
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
 - `Markets`: Nodes where end-customers place final product orders. These are the last  (sink) nodes in the network.
 
-A `SupplyChainEnv` object is created based on system inputs and network structure, which can be used to simulate stochastic demand at the end distribution centers and inventory replenishment decisions throughout the network. The `SupplyChainEnv` can be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
+The simplest network that can be modeled is one with a single market with one producer or distributor. However, more complex systems can be modelled as well.
+
+When defining a supply network, a `SupplyChainEnv` object is created based on system inputs and network structure. This object can then be used to execute a simulation of the inventory dynamics. During a simulation, stochastic demand at each of the markets can occur for each of the products in each period. When product demand occurs at the market, sales are made based on available inventory. Any unfulfilled demand is either backlogged or considered a lost sale depending on the system definition. If no action is taken duirng the simulation, the inventory levels will eventually be depleted. To avoid this from happening, a decision-maker can interact with the system in each period by making inventory replenishment decisions (refered to as `actions`). Lead times for in-transit inventory as well as production lead times are accounted for in the simulation. Transportation lead times can be modelled stochastically to account for lead time uncertainty. From a service time perspective, demand at market nodes has zero service time, whereas non-market nodes have service time equal to the production lead time + transportation lead time.
+
+The `SupplyChainEnv` can also potentially be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
 
 This package generalizes and extends and the inventory management environment available in [OR-Gym](https://github.com/hubbs5/or-gym).
 
@@ -44,9 +48,16 @@ The following assumptions hold in the current implementation, but can be modifie
 
 - `Producers` do not hold inventory.
 - `Producers` have unlimitted supply of raw materials.
-- `Producers` can produce material on demand (`make-to-order`).
+- `Producers` produce material on demand (`make-to-order`).
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
+
+## Model Limitations
+
+The following are not currently supported:
+
+- Bill of Materials at `Producers`
+- `Producers` at intermediate locations.
 
 ## Inventory replenishment policies
 
