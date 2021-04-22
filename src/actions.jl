@@ -54,7 +54,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
                 accepted = min(amount, capacity) #accepted request
                 capacities[a[1]][p] = capacity - accepted #update production capacity to account for commited capacity (handled first come first serve)
                 if amount > capacity
-                    @warn "Replenishment request for product $p to node $(a[1]) was reduced by $(amount - accepted) due to insufficient production capacity."
+                    @warn "Replenishment request for product $p to node $(a[1]) was reduced from $amount to $accepted due to insufficient production capacity."
                 end
                 if accepted > 0 #schedule production
                     prod_time = get_prop(x.network, a[1], :production_time)[p] #production time
@@ -65,7 +65,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Number)
                 accepted = min(amount, supply) #accepted request
                 inv_levels[a[1]][inv_levels[a[1]].product .== p, :level] .= supply - accepted #update available inventory to account for commited inventory (handled first come first serve)
                 if amount > supply
-                    @warn "Replenishment request for product $p to node $(a[1]) was reduced by $(amount - accepted) due to insufficient inventory."
+                    @warn "Replenishment request for product $p to node $(a[1]) was reduced from $amount to $accepted due to insufficient inventory."
                 end
                 if accepted > 0 #subtract sent onhand inventory, add sent pipeline inventory
                     x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
