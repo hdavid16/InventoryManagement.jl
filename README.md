@@ -1,4 +1,6 @@
-# InventoryManagement.jl: Discrete-time simulation environment for Inventory Management in Supply Networks.
+# InventoryManagement.jl:
+
+Discrete-time simulation environment for Inventory Management in Supply Networks.
 
 ![](logo.png)
 
