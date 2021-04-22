@@ -2,23 +2,16 @@ using LightGraphs, MetaGraphs, DataFrames, Distributions
 using InventoryManagement, StatsPlots
 
 #define network connectivity
-adjmx = [0 0 1;
-         0 0 1;
-         0 0 0]
-net = MetaDiGraph(adjmx)
-products = [:A, :B, :C, :D, :E]
+net = MetaDiGraph(path_digraph(2)) # 1 -> 2
+products = [:A]
 set_prop!(net, :products, products)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(:production_cost => Dict(p => 0.01 for p in products),
-                        :production_time => Dict(p => 1 for p in products),
+                        :production_time => Dict(p => 0 for p in products),
                         :production_capacity => Dict(p => Inf for p in products)))
 
-set_props!(net, 2, Dict(:production_cost => Dict(p => 0.01 for p in products),
-                        :production_time => Dict(p => 1 for p in products),
-                        :production_capacity => Dict(p => Inf for p in products)))
-
-set_props!(net, 3, Dict(:initial_inventory => Dict(p => 10 for p in products),
+set_props!(net, 2, Dict(:initial_inventory => Dict(p => 100 for p in products),
                         :holding_cost => Dict(p => 0.01 for p in products),
                         :demand_distribution => Dict(p => Normal(5,0.5) for p in products),
                         :demand_frequency => Dict(p => 0.5 for p in products),
@@ -26,24 +19,23 @@ set_props!(net, 3, Dict(:initial_inventory => Dict(p => 10 for p in products),
                         :demand_penalty => Dict(p => 0.01 for p in products)))
 
 #specify sales prices, transportation costs, lead time
-set_props!(net, 1, 3, Dict(:sales_price => Dict(p => 2 for p in products),
-                          :transportation_cost => Dict(p => 0.01 for p in products),
-                          :lead_time => Poisson(5)))
-
-set_props!(net, 2, 3, Dict(:sales_price => Dict(p => 2 for p in products),
+set_props!(net, 1, 2, Dict(:sales_price => Dict(p => 2 for p in products),
                           :transportation_cost => Dict(p => 0.01 for p in products),
                           :lead_time => Poisson(5)))
 
 #create environment
-env = SupplyChainEnv(net, 30)
+num_periods = 100
+env = SupplyChainEnv(net, num_periods)
 
-#define action
-action = rand(10)*5
-# action = DataFrame(:product=>products,
-#                    [Symbol((a.src,a.dst)) => rand(5)*5 for a in edges(env.network)]...)
+#define reorder policy parameters
+policy = :sS #(s, S) policy
+on = :position #monitor inventory position
+s = Dict(:A => 20) #lower bound on inventory
+S = Dict(:A => 100) #base stock level
 
-#run simulation
+#run simulation with reorder policy
 for t in 1:env.num_periods
+    action = reorder_policy(env, s, S, on, policy)
     (env)(action)
 end
 
