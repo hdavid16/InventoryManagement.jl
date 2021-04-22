@@ -186,4 +186,4 @@ fig2 = @df inv_position plot(:period, :level, group=(:node, :product), linetype=
 **Author**: Hector D. Perez\
 **Position**: Ph. D. Candidate @ Carnegie Mellon University\
 **Email**: hdperez@cmu.edu\
-**Year**: 2020
+**Year**: 2021
