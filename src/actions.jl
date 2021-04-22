@@ -203,10 +203,14 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         end
         trigger = param1[p] > state
         reorder = 0
-        if kind == :rQ #rQ policy
-            reorder = param2[p]
-        elseif kind == :sS #sS policy
-            reorder = max(param2[p] - state, 0)
+        if trigger
+            if kind == :rQ #rQ policy
+                reorder = param2[p]
+            elseif kind == :sS #sS policy
+                reorder = max(param2[p] - state, 0)
+            end
+        else
+            reorder = 0
         end
 
         suppliers = length(inneighbors(env.network, n))
