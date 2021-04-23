@@ -6,7 +6,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     producers::Array #Array of producer nodes
     distributors::Array #Array of distribution centers (excludes market nodes)
     products::Array #Array of product names (strings)
-    bill_of_materials::Array #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow products list; positive value is a co-product, negative is a input
+    bill_of_materials::Matrix #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow products list; positive value is a co-product, negative is a input
     inv_on_hand::DataFrame #Timeseries On Hand Inventory @ each node
     inv_pipeline::DataFrame #Timeseries Pipeline Inventory on each arc
     inv_position::DataFrame #Timeseries Inventory Position for each node
