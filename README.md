@@ -69,8 +69,8 @@ The following assumptions hold in the current implementation, but can be modifie
 The following features are not currently supported:
 
 - Alternate bills of materials (see [Model Inputs](#graph-specific)) for the same product are not currently supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
-  - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for product `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for product `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made. 
-  - Make a copy of the material to specify an alternate pathway. This will require specifying parameters for the copied material throughout the network. 
+  - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for product `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for product `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made.
+  - Make a copy of the material to specify an alternate pathway. This will require specifying parameters for the copied material throughout the network.
 
 ## Inventory replenishment policies
 
@@ -212,11 +212,11 @@ end
 #profit
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
-fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
+fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :topleft,
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-fig2 = @df env.inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
+fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Product = :product}, linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
 ```
 ![](examples/figs/ex1_profit.png)

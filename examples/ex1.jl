@@ -50,9 +50,9 @@ end
 #profit
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
-fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
+fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :topleft,
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-fig2 = @df env.inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
+fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Product = :product}, linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
