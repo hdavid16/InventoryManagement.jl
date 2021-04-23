@@ -8,14 +8,15 @@
 
 1. [Overview](#overview)
 2. [Dependencies](#dependencies)
-3. [Sequence of Events](#sequence-of-events)
-4. [Model Assumptions](#model-assumptions)
-5. [Model Limitations](#model-limitations)
-6. [Inventory replenishment policies](#inventory-replenishment-policies)
-7. [Model Inputs](#model-inputs)
-8. [Model Output](#model-output)
-9. [Example](#example)
-10. [Contact](#contact)
+3. [Installation](#installation)
+4. [Sequence of Events](#sequence-of-events)
+5. [Model Assumptions](#model-assumptions)
+6. [Model Limitations](#model-limitations)
+7. [Inventory replenishment policies](#inventory-replenishment-policies)
+8. [Model Inputs](#model-inputs)
+9. [Model Output](#model-output)
+10. [Example](#example)
+11. [Contact](#contact)
 
 ## Overview
 
@@ -38,6 +39,14 @@ This package generalizes and extends and the inventory management environment av
 - [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Define supply network structure and specify node- and edge-specific parameters.
 - [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results.
 - [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the market demands at the end distributors.
+
+## Installation
+
+The package can be installed with the Julia package manager. From the Julia REPL, type `]`` to enter the `Pkg` REPL mode and run:
+
+```julia
+pkg> add https://github.com/hdavid16/InventoryManagement.jl
+```
 
 ## Sequence of Events
 
