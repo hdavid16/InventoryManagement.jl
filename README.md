@@ -115,6 +115,7 @@ The graph metadata should have the following fields in its metadata:
   - `zero`: input not involved in production of output.
   - `negative number`: input is consumed in the production of output.
   - `positive number`: input is a co-product of the output.
+  
 The magnitude of each element is proportional to the production of one unit of output material.
 
 ## Model Output
