@@ -44,7 +44,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     prods = get_prop(network, :products)
     bom = get_prop(network, :bill_of_materials)
     #check inputs
-    @assert typeof(x) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
+    @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
     @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
     @assert size(bom)[1] == length(prods) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
