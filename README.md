@@ -7,9 +7,9 @@
 ## Overview
 
 *InventoryManagement.jl* allows modeling a [make-to-order](en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
-- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). These are the top-most (source) nodes in the network.
+- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced).
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
-- `Markets`: Nodes where end-customers place final product orders. These are the last  (sink) nodes in the network.
+- `Markets`: Nodes where end-customers place final product orders. These are the last (sink) nodes in the network.
 
 The simplest network that can be modeled is one with a single market with one producer or distributor. However, more complex systems can be modelled as well.
 
@@ -30,9 +30,9 @@ This package generalizes and extends and the inventory management environment av
 
 The following sequence of events occurs in each period of the simulation:
 1. Start period.
-2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory (supplier is a distribution node). If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next priority supplier.
+2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory. If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next priority supplier.
    - Distributors ship inventory.
-   - Producers manufacture products (a production lead time begins). Production costs are incurred at the start of production.
+   - Producers attempt to satisfy order with any on-hand inventory and then manufacture products for any amount remaining (a production lead time begins). Production costs are incurred at the start of production.
    - Producers send orders that have completed (after the production lead time).
 4. Receive inventory that has arrived at each node (after the lead time has transpired).
 5. Pay suppliers for inventory received.
@@ -46,18 +46,17 @@ The following sequence of events occurs in each period of the simulation:
 
 The following assumptions hold in the current implementation, but can be modified in future releases.
 
-- `Producers` do not hold inventory.
-- `Producers` have unlimitted supply of raw materials.
 - `Producers` produce material on demand (`make-to-order`).
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
+- Transportation costs are paid to a third party (not a node in the network).
 
 ## Model Limitations
 
 The following are not currently supported:
 
-- Bill of Materials at `Producers`
-- `Producers` at intermediate locations.
+- ~~Bill of Materials at `Producers`~~
+- ~~`Producers` at intermediate locations.~~
 
 ## Inventory replenishment policies
 
@@ -80,9 +79,13 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 ### Node-specific
 
 `Producers` will have the following fields in their node metadata:
+- `:initial_inventory::Dict`: initial inventory for each product (`keys`)
+- `:holding_cost::Dict`: unit holding cost for each product (`keys`)
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each product (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 - `:production_cost::Dict`: unit production cost for each product (`keys`)
 - `:production_capacity::Dict`: maximum production capacity for each product (`keys`).
 - `:production_time::Dict`: production lead time for each product (`keys`).
+- `:bill_of_materials::Dict`: bill of materials indicating the amount of units of each material required to make a single unit of each product (`keys`) as a NamedTuple (e.g., `:A => (A = 0, B = 1)` means that 1 unit of `:B` is used to produce a single unit of `:A`)
 
 `Distributors` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each product (`keys`)
@@ -105,6 +108,10 @@ All edges have the following fields in their metadata:
 - `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each product (`keys`)
 - `:lead_time::Distribution{Univariate, Discrete}`: the lead time on each edge
 
+### Graph-specific
+
+The graph metadata should have a key `:products` with a list (`Vector`) of all materials in the system.
+
 ## Model Output
 
 A `SupplyChainEnv` has the following fields:
@@ -112,7 +119,7 @@ A `SupplyChainEnv` has the following fields:
 - `markets::Array`: list of market nodes
 - `producers::Array`: list of producer nodes
 - `distributors::Array`: list of distribution nodes (excludes end distributors where markets exist)
-- `products::Array`: list of product names (strings)
+- `products::Array`: list of all product (material) names (strings)
 - `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node at the end of each period
 - `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
 - `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
@@ -139,25 +146,30 @@ using InventoryManagement, StatsPlots
 
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
-products = [:A]
+products = [:A, :B]
 set_prop!(net, :products, products)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
-set_props!(net, 1, Dict(:production_cost => Dict(:A => 0.01),
-                        :production_time => Dict(:A => 0),
-                        :production_capacity => Dict(:A => Inf)))
+set_props!(net, 1, Dict(:initial_inventory => Dict(:A => 0, :B => 100),
+                        :holding_cost => Dict(:A => 0, :B => 0),
+                        :production_cost => Dict(:A => 0.01, :B => 0),
+                        :production_time => Dict(:A => 0, :B => 0),
+                        :production_capacity => Dict(:A => Inf, :B => 0),
+                        :bill_of_materials => Dict(:A => (A = 0, B = 1),
+                                                   :B => (A = 0, B = 0))))
 
-set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100),
-                        :holding_cost => Dict(:A => 0.01),
-                        :demand_distribution => Dict(:A => Normal(5,0.5)),
-                        :demand_frequency => Dict(:A => 0.5),
-                        :sales_price => Dict(:A => 3),
-                        :demand_penalty => Dict(:A => 0.01),
-                        :supplier_priority => Dict(:A => [1])))
+set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100, :B => 0),
+                        :holding_cost => Dict(:A => 0.01, :B => 0),
+                        :demand_distribution => Dict(:A => Normal(5,0.5),
+                                                     :B => zeros(2)),
+                        :demand_frequency => Dict(:A => 0.5, :B => 0),
+                        :sales_price => Dict(:A => 3, :B => 0),
+                        :demand_penalty => Dict(:A => 0.01, :B => 0),
+                        :supplier_priority => Dict(:A => [1], :B => [1])))
 
 #specify sales prices, transportation costs, lead time
-set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
-                          :transportation_cost => Dict(:A => 0.01),
+set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2, :B => 2),
+                          :transportation_cost => Dict(:A => 0.01, :B => 0),
                           :lead_time => Poisson(5)))
 
 #create environment
@@ -167,8 +179,8 @@ env = SupplyChainEnv(net, num_periods)
 #define reorder policy parameters
 policy = :sS #(s, S) policy
 on = :position #monitor inventory position
-s = Dict((2,:A) => 20) #lower bound on inventory
-S = Dict((2,:A) => 100) #base stock level
+s = Dict((2,:A) => 20, (2,:B) => 0) #lower bound on inventory
+S = Dict((2,:A) => 100, (2,:B) => 0) #base stock level
 
 #run simulation with reorder policy
 for t in 1:env.num_periods
@@ -184,8 +196,7 @@ fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-inv_position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
-fig2 = @df inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
+fig2 = @df env.inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
 
 ```
