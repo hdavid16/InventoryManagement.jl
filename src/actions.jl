@@ -38,6 +38,9 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     arcs = [(e.src, e.dst) for e in edges(x.network)]
     act = reshape(action, (length(prods), length(arcs)))
 
+    #get bom
+    bom = x.bill_of_materials
+
     #store original production capacities (to account for commited capacity and commited inventory in next section)
     capacities = Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers)
 
@@ -50,16 +53,16 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                 a = (sup, n) #arc
                 j = findfirst(k -> k == a, arcs) #find index for that arc in the action matrix
                 amount = act[i,j] #amount requested
-                supply = filter(i -> i.period == x.period && i.node == a[1] && i.product == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
+                supply = filter(k -> k.period == x.period && k.node == a[1] && k.product == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
                 #accept or adjust requests
                 if a[1] in x.producers
-                    bom = get_prop(x.network, a[1], :bill_of_materials)[p] #get bom
                     capacity = capacities[a[1]][p] #get production capacity
                     mat_supply = [] #store max capacity based on raw material consumption for each raw material
-                    for pp in prods
-                        sup_pp = filter(i -> i.period == x.period && i.node == a[1] && i.product == pp, x.inv_on_hand).level[1] #supply of pp
-                        if bom[pp] > 0 #only account for raw materials that are in the BOM
-                            push!(mat_supply, sup_pp / bom[pp])
+                    pprods = findall(k -> !iszero(k), bom[:,i]) #indices of materials involved with production of p
+                    for ii in pprods
+                        sup_pp = filter(k -> k.period == x.period && k.node == a[1] && k.product == prods[ii], x.inv_on_hand).level[1] #supply of pp
+                        if bom[ii,i] < 0 #only account for raw materials that are in the BOM
+                            push!(mat_supply, - sup_pp / bom[ii,i])
                         end
                     end
                     accepted_inv = min(amount, supply) #try to satisfy with on hand inventory first
@@ -78,10 +81,10 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                     x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
                                    (string.(x.inv_pipeline.arc) .== string(a)) .&
                                    (x.inv_pipeline.product .== p), :level] .+= accepted_inv
-                    for pp in setdiff(prods, [p])
+                    for ii in pprods
                         x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
                                       (x.inv_on_hand.node .== a[1]) .&
-                                      (x.inv_on_hand.product .== pp), :level] .-= accepted_prod * bom[pp]
+                                      (x.inv_on_hand.product .== prods[ii]), :level] .+= accepted_prod * bom[ii,i]
                     end
                 else
                     accepted = min(amount, supply) #accepted request

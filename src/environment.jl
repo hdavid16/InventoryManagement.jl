@@ -6,6 +6,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     producers::Array #Array of producer nodes
     distributors::Array #Array of distribution centers (excludes market nodes)
     products::Array #Array of product names (strings)
+    bill_of_materials::Array #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow products list; positive value is a co-product, negative is a input
     inv_on_hand::DataFrame #Timeseries On Hand Inventory @ each node
     inv_pipeline::DataFrame #Timeseries Pipeline Inventory on each arc
     inv_position::DataFrame #Timeseries Inventory Position for each node
@@ -41,9 +42,13 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     dcs = setdiff(nodes, mrkts, plants)
     #get products
     prods = get_prop(network, :products)
+    bom = get_prop(network, :bill_of_materials)
     #check inputs
+    @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
+    @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
+    @assert size(bom)[1] == length(prods) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
-    plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity, :bill_of_materials]
+    plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity]
     dcs_keys = [:initial_inventory, :holding_cost]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in mrkts, key in market_keys
@@ -116,7 +121,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     reward = 0
     period = 0
     num_periods = num_periods
-    env = SupplyChainEnv(network, mrkts, plants, dcs, prods, inv_on_hand, inv_pipeline, inv_position,
+    env = SupplyChainEnv(network, mrkts, plants, dcs, prods, bom, inv_on_hand, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
                     profit, reward, period, num_periods, discount, backlog, reallocate, seed)
 
