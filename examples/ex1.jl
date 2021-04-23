@@ -4,16 +4,17 @@ using InventoryManagement, StatsPlots
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
 products = [:A, :B]
+bom = [0 0; # B -> A
+      -1 0]
 set_prop!(net, :products, products)
+set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(:initial_inventory => Dict(:A => 0, :B => 100),
                         :holding_cost => Dict(:A => 0, :B => 0),
                         :production_cost => Dict(:A => 0.01, :B => 0),
                         :production_time => Dict(:A => 0, :B => 0),
-                        :production_capacity => Dict(:A => Inf, :B => 0),
-                        :bill_of_materials => Dict(:A => (A = 0, B = 1),
-                                                   :B => (A = 0, B = 0))))
+                        :production_capacity => Dict(:A => Inf, :B => 0)))
 
 set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100, :B => 0),
                         :holding_cost => Dict(:A => 0.01, :B => 0),

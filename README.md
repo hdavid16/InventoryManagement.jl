@@ -7,7 +7,7 @@
 ## Overview
 
 *InventoryManagement.jl* allows modeling a [make-to-order](en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
-- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced).
+- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). Reactive systems with co-products can be modelled using the `bill_of_materials` (see Model Inputs section below).
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
 - `Markets`: Nodes where end-customers place final product orders. These are the last (sink) nodes in the network.
 
@@ -85,7 +85,6 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `:production_cost::Dict`: unit production cost for each product (`keys`)
 - `:production_capacity::Dict`: maximum production capacity for each product (`keys`).
 - `:production_time::Dict`: production lead time for each product (`keys`).
-- `:bill_of_materials::Dict`: bill of materials indicating the amount of units of each material required to make a single unit of each product (`keys`) as a NamedTuple (e.g., `:A => (A = 0, B = 1)` means that 1 unit of `:B` is used to produce a single unit of `:A`)
 
 `Distributors` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each product (`keys`)
@@ -110,7 +109,13 @@ All edges have the following fields in their metadata:
 
 ### Graph-specific
 
-The graph metadata should have a key `:products` with a list (`Vector`) of all materials in the system.
+The graph metadata should have the following fields in its metadata:
+- `:products::Vector` with a list of all materials in the system.
+- `:bill_of_materials::Matrix`: bill of materials indicating the production recipies for the materials in the system. The row numbers correspond to the input materials and the column numbers to the output materials. The numbering matches that of the `products` vector. Each element can have one of three types of values:
+  - `zero`: input not involved in production of output.
+  - `negative number`: input is consumed in the production of output.
+  - `positive number`: input is a co-product of the output.
+The magnitude of each element is proportional to the production of one unit of output material.
 
 ## Model Output
 
@@ -147,16 +152,17 @@ using InventoryManagement, StatsPlots
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
 products = [:A, :B]
+bom = [0 0; # B -> A
+      -1 0]
 set_prop!(net, :products, products)
+set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(:initial_inventory => Dict(:A => 0, :B => 100),
                         :holding_cost => Dict(:A => 0, :B => 0),
                         :production_cost => Dict(:A => 0.01, :B => 0),
                         :production_time => Dict(:A => 0, :B => 0),
-                        :production_capacity => Dict(:A => Inf, :B => 0),
-                        :bill_of_materials => Dict(:A => (A = 0, B = 1),
-                                                   :B => (A = 0, B = 0))))
+                        :production_capacity => Dict(:A => Inf, :B => 0)))
 
 set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100, :B => 0),
                         :holding_cost => Dict(:A => 0.01, :B => 0),
@@ -168,7 +174,7 @@ set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100, :B => 0),
                         :supplier_priority => Dict(:A => [1], :B => [1])))
 
 #specify sales prices, transportation costs, lead time
-set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2, :B => 2),
+set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2, :B => 0),
                           :transportation_cost => Dict(:A => 0.01, :B => 0),
                           :lead_time => Poisson(5)))
 
@@ -198,7 +204,6 @@ fig1 = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
 #inventory position
 fig2 = @df env.inv_position plot(:period, :level, group=(:node, :product), linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
-
 ```
 ![](examples/figs/ex1_profit.png)
 ![](examples/figs/ex1_position.png)
