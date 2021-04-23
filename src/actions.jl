@@ -84,7 +84,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                     for ii in pprods
                         x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
                                       (x.inv_on_hand.node .== a[1]) .&
-                                      (x.inv_on_hand.product .== pp), :level] .+= accepted_prod * bom[ii,i]
+                                      (x.inv_on_hand.product .== prods[ii]), :level] .+= accepted_prod * bom[ii,i]
                     end
                 else
                     accepted = min(amount, supply) #accepted request
