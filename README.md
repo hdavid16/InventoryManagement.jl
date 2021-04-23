@@ -4,6 +4,20 @@
 
 ![](logo.png)
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Dependencies](#dependencies)
+3. [Sequence of Events](#sequence-of-events)
+4. [Sequence of Events](#sequence-of-events)
+5. [Model Assumptions](#model-assumptions)
+6. [Model Limitations](#model-limitations)
+7. [Inventory replenishment policies](#inventory-replenishment-policies)
+8. [Model Inputs](#model-inputs)
+9. [Model Output](#model-output)
+10. [Example](#example)
+11. [Contact](#contact)
+
 ## Overview
 
 *InventoryManagement.jl* allows modeling a [make-to-order](en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
@@ -53,10 +67,7 @@ The following assumptions hold in the current implementation, but can be modifie
 
 ## Model Limitations
 
-The following are not currently supported:
-
-- ~~Bill of Materials at `Producers`~~
-- ~~`Producers` at intermediate locations.~~
+The following features are not currently supported:
 
 ## Inventory replenishment policies
 
@@ -111,12 +122,10 @@ All edges have the following fields in their metadata:
 
 The graph metadata should have the following fields in its metadata:
 - `:products::Vector` with a list of all materials in the system.
-- `:bill_of_materials::Matrix`: bill of materials indicating the production recipies for the materials in the system. The row numbers correspond to the input materials and the column numbers to the output materials. The numbering matches that of the `products` vector. Each element can have one of three types of values:
+- `:bill_of_materials::Matrix`: bill of materials indicating the production recipies for the materials in the system. The row numbers correspond to the input materials and the column numbers to the output materials. The numbering matches that of the `products` vector. The magnitude of each element is proportional to the production of one unit of output material. Each element can have one of three types of values:
   - `zero`: input not involved in production of output.
   - `negative number`: input is consumed in the production of output.
   - `positive number`: input is a co-product of the output.
-  
-The magnitude of each element is proportional to the production of one unit of output material.
 
 ## Model Output
 
