@@ -9,14 +9,13 @@
 1. [Overview](#overview)
 2. [Dependencies](#dependencies)
 3. [Sequence of Events](#sequence-of-events)
-4. [Sequence of Events](#sequence-of-events)
-5. [Model Assumptions](#model-assumptions)
-6. [Model Limitations](#model-limitations)
-7. [Inventory replenishment policies](#inventory-replenishment-policies)
-8. [Model Inputs](#model-inputs)
-9. [Model Output](#model-output)
-10. [Example](#example)
-11. [Contact](#contact)
+4. [Model Assumptions](#model-assumptions)
+5. [Model Limitations](#model-limitations)
+6. [Inventory replenishment policies](#inventory-replenishment-policies)
+7. [Model Inputs](#model-inputs)
+8. [Model Output](#model-output)
+9. [Example](#example)
+10. [Contact](#contact)
 
 ## Overview
 
