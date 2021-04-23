@@ -138,6 +138,7 @@ A `SupplyChainEnv` has the following fields:
 - `producers::Array`: list of producer nodes
 - `distributors::Array`: list of distribution nodes (excludes end distributors where markets exist)
 - `products::Array`: list of all product (material) names (strings)
+- `bill_of_materials::Matrix` square matrix with BOM (rows = input materials, cols = output materials; indices follow products list; positive value is a co-product, negative is a feedstock)
 - `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node at the end of each period
 - `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
 - `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
