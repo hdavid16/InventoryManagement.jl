@@ -68,6 +68,10 @@ The following assumptions hold in the current implementation, but can be modifie
 
 The following features are not currently supported:
 
+- Alternate bills of materials (see [Bill of Materials](#graph-specific)) for the same product are not supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
+  - If the alternate reaction pathway has a byproduct then the main product can be included as a co-product of the bill of materials for the other one. For example: `B + C -> A` and `D -> A + E`. The column for product `A` can have the bill of material: `[0 -1 -1 0 0]`. The column for product `E` can have the bill of materials: `[1 0 0 -1 0]`.
+  - Make a copy of the material to specify an alternate pathway.
+
 ## Inventory replenishment policies
 
 At each iteration in the simulation, an `action` can be provided to the system, which consists of the replenishment orders placed on every link in the supply network. This `action` must be of type `Vector{Real}` and must be `nonnegative` of the form: `[Edge1_Product1, Edge1_Product2, ..., Edge1_ProductP, Edge2_Product1, ..., Edge2_ProductP, ..., EdgeE_Product1, ..., EdgeE_ProductP]`, where the ordering in the edges is given by `edges(env.network)` and the ordering in the products by `env.products`.
