@@ -19,14 +19,14 @@
 
 ## Overview
 
-*InventoryManagement.jl* allows modeling a [make-to-order](en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
-- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). Reactive systems, including those with material co-products, can be modelled using [Bills of Materials](https://en.m.wikipedia.org/wiki/Bill_of_materials) (see [Model Inputs section](#graph-specific)).
+*InventoryManagement.jl* allows modeling a [make-to-order](https://en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
+- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final materials are produced). Reactive systems, including those with co-products, can be modelled using [Bills of Materials](https://en.wikipedia.org/wiki/Bill_of_materials) (see [Model Inputs section](#graph-specific)).
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
 - `Markets`: Nodes where end-customers place final product orders. These are the last (sink) nodes in the network.
 
 The simplest network that can be modeled is one with a single market with one producer or distributor. However, more complex systems can be modelled as well.
 
-When defining a supply network, a `SupplyChainEnv` object is created based on system inputs and network structure. This object can then be used to execute a simulation of the inventory dynamics. During a simulation, stochastic demand at each of the markets can occur for each of the products in each period. When product demand occurs at the market, sales are made based on available inventory. Any unfulfilled demand is either backlogged or considered a lost sale depending on the system definition. If no action is taken duirng the simulation, the inventory levels will eventually be depleted. To avoid this from happening, a decision-maker can interact with the system in each period by making inventory replenishment decisions (refered to as `actions`). Lead times for in-transit inventory as well as production lead times are accounted for in the simulation. Transportation lead times can be modelled stochastically to account for lead time uncertainty. From a service time perspective, demand at market nodes has zero service time, whereas non-market nodes have service time equal to the production lead time + transportation lead time.
+When defining a supply network, a `SupplyChainEnv` object is created based on system inputs and network structure. This object can then be used to execute a simulation of the inventory dynamics. During a simulation, stochastic demand at each of the markets can occur for each of the materials in each period. When product demand occurs at the market, sales are made based on available inventory. Any unfulfilled demand is either backlogged or considered a lost sale depending on the system definition. If no action is taken duirng the simulation, the inventory levels will eventually be depleted. To avoid this from happening, a decision-maker can interact with the system in each period by making inventory replenishment decisions (refered to as `actions`). Lead times for in-transit inventory as well as production lead times are accounted for in the simulation. Transportation lead times can be modelled stochastically to account for lead time uncertainty. From a service time perspective, demand at market nodes has zero service time, whereas non-market nodes have service time equal to the production lead time + transportation lead time.
 
 The `SupplyChainEnv` can also potentially be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
 
@@ -45,7 +45,7 @@ The following sequence of events occurs in each period of the simulation:
 1. Start period.
 2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory. If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next priority supplier.
    - Distributors ship inventory.
-   - Producers attempt to satisfy order with any on-hand inventory and then manufacture products for any amount remaining (a production lead time begins). Production costs are incurred at the start of production.
+   - Producers attempt to satisfy order with any on-hand inventory and then manufacture materials for any amount remaining (a production lead time begins). Production costs are incurred at the start of production.
    - Producers send orders that have completed (after the production lead time).
 4. Receive inventory that has arrived at each node (after the lead time has transpired).
 5. Pay suppliers for inventory received.
@@ -68,13 +68,13 @@ The following assumptions hold in the current implementation, but can be modifie
 
 The following features are not currently supported:
 
-- Alternate bills of materials (see [Model Inputs](#graph-specific)) for the same product are not currently supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
-  - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for product `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for product `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made.
+- Alternate bills of materials (see [Model Inputs](#graph-specific)) for the same material are not currently supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
+  - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for material `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for material `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made.
   - Make a copy of the material to specify an alternate pathway. This will require specifying parameters for the copied material throughout the network.
 
 ## Inventory replenishment policies
 
-At each iteration in the simulation, an `action` can be provided to the system, which consists of the replenishment orders placed on every link in the supply network. This `action` must be of type `Vector{Real}` and must be `nonnegative` of the form: `[Edge1_Product1, Edge1_Product2, ..., Edge1_ProductP, Edge2_Product1, ..., Edge2_ProductP, ..., EdgeE_Product1, ..., EdgeE_ProductP]`, where the ordering in the edges is given by `edges(env.network)` and the ordering in the products by `env.products`.
+At each iteration in the simulation, an `action` can be provided to the system, which consists of the replenishment orders placed on every link in the supply network. This `action` must be of type `Vector{Real}` and must be `nonnegative` of the form: `[Edge1_Material1, Edge1_Material2, ..., Edge1_MaterialM, Edge2_Material1, ..., Edge2_MaterialM, ..., EdgeE_Material1, ..., EdgeE_MaterialM]`, where the ordering in the edges is given by `edges(env.network)` and the ordering in the materials by `env.materials`.
 
 An `action` vector can be visualized as a `DataFrame` using `show_action(action, env::SupplyChainEnv)`.
 
@@ -82,8 +82,8 @@ The function `reorder_policy` can be used to implement an inventory reorder poli
 
 The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `env::SupplyChainEnv`: inventory management environment
-- `param1::Dict`: the `s` or `r` parameter in each node for each product in the system. The `keys` are of the form `(node, product)`.
-- `param2::Dict`: the `S` or `Q` parameter in each node for each product in the system. The `keys` are of the form `(node, product)`.
+- `param1::Dict`: the `s` or `r` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
+- `param2::Dict`: the `S` or `Q` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
 - `level::Symbol`: `:position` if the policy is based on the node's inventory position, or `:on_hand` if the policy is based on the node's on-hand inventory level.
 - `kind::Symbol`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy
 - `supplier_selection::Symbol`: evenly distribute reorder quantities among all suppliers if `:random`; otherwise (if `:priority`), assign reorder quantities based on supplier priority (e.g., if supplier 1 does not have enough capacity or inventory, then request as much as possible and then request any remaining amount from the next supplier, and so forth).
@@ -93,39 +93,39 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 ### Node-specific
 
 `Producers` will have the following fields in their node metadata:
-- `:initial_inventory::Dict`: initial inventory for each product (`keys`)
-- `:holding_cost::Dict`: unit holding cost for each product (`keys`)
-- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each product (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
-- `:production_cost::Dict`: unit production cost for each product (`keys`)
-- `:production_capacity::Dict`: maximum production capacity for each product (`keys`).
-- `:production_time::Dict`: production lead time for each product (`keys`).
+- `:initial_inventory::Dict`: initial inventory for each material (`keys`)
+- `:holding_cost::Dict`: unit holding cost for each material (`keys`)
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
+- `:production_cost::Dict`: unit production cost for each material (`keys`)
+- `:production_capacity::Dict`: maximum production capacity for each material (`keys`).
+- `:production_time::Dict`: production lead time for each material (`keys`).
 
 `Distributors` will have the following fields in their node metadata:
-- `:initial_inventory::Dict`: initial inventory for each product (`keys`)
-- `:holding_cost::Dict`: unit holding cost for each product (`keys`)
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each product (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
+- `:initial_inventory::Dict`: initial inventory for each material (`keys`)
+- `:holding_cost::Dict`: unit holding cost for each material (`keys`)
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 
 `Markets` will have the following fields in their node metadata:
-- `:initial_inventory::Dict`: initial inventory for each product (`keys`)
-- `:holding_cost::Dict`: unit holding cost for each product (`keys`)
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each product (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
-- `:demand_distribution::Dict`: probability distributions for the market demands for each product (`keys`)
-- `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each product (`keys`)
-- `:sales_price::Dict`: market sales price for each product (`keys`)
-- `:demand_penalty::Dict`: unit penalty for unsatisfied market demand for each product (`keys`)
+- `:initial_inventory::Dict`: initial inventory for each material (`keys`)
+- `:holding_cost::Dict`: unit holding cost for each material (`keys`)
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
+- `:demand_distribution::Dict`: probability distributions for the market demands for each material (`keys`)
+- `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each material (`keys`)
+- `:sales_price::Dict`: market sales price for each material (`keys`)
+- `:demand_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
 
 ### Edge-specific
 
 All edges have the following fields in their metadata:
-- `:sales_price::Dict`: unit sales price for inventory sent on that edge (from supplier to receiver) for each product (`keys`)
-- `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each product (`keys`)
+- `:sales_price::Dict`: unit sales price for inventory sent on that edge (from supplier to receiver) for each material (`keys`)
+- `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each material (`keys`)
 - `:lead_time::Distribution{Univariate, Discrete}`: the lead time on each edge
 
 ### Graph-specific
 
 The graph metadata should have the following fields in its metadata:
-- `:products::Vector` with a list of all materials in the system.
-- `:bill_of_materials::Matrix`: bill of materials indicating the production recipies for the materials in the system. The row numbers correspond to the input materials and the column numbers to the output materials. The numbering matches that of the `products` vector. The magnitude of each element is proportional to the production of one unit of output material. Each element can have one of three types of values:
+- `:materials::Vector` with a list of all materials in the system.
+- `:bill_of_materials::Matrix`: bill of materials indicating the production recipies for the materials in the system. The row numbers correspond to the input materials and the column numbers to the output materials. The numbering matches that of the `materials` vector. The magnitude of each element is proportional to the production of one unit of output material. Each element can have one of three types of values:
   - `zero`: input not involved in production of output.
   - `negative number`: input is consumed in the production of output.
   - `positive number`: input is a co-product of the output.
@@ -137,8 +137,8 @@ A `SupplyChainEnv` has the following fields:
 - `markets::Array`: list of market nodes
 - `producers::Array`: list of producer nodes
 - `distributors::Array`: list of distribution nodes (excludes end distributors where markets exist)
-- `products::Array`: list of all product (material) names (strings)
-- `bill_of_materials::Matrix` square matrix with BOM (rows = input materials, cols = output materials; indices follow products list; positive value is a co-product, negative is a feedstock)
+- `materials::Array`: list of all material (material) names (strings)
+- `bill_of_materials::Matrix` square matrix with BOM (rows = input materials, cols = output materials; indices follow materials list; positive value is a co-product, negative is a feedstock)
 - `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node at the end of each period
 - `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
 - `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
@@ -165,10 +165,10 @@ using InventoryManagement, StatsPlots
 
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
-products = [:A, :B]
+materials = [:A, :B]
 bom = [0 0; # B -> A
       -1 0]
-set_prop!(net, :products, products)
+set_prop!(net, :materials, materials)
 set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
@@ -216,7 +216,7 @@ fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :t
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Product = :product}, linetype=:steppost,
+fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Material = :material}, linetype=:steppost,
                     xlabel="period", ylabel="inventory position")
 ```
 ![](examples/figs/ex1_profit.png)

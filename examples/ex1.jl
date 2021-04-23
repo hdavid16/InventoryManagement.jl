@@ -3,10 +3,10 @@ using InventoryManagement, StatsPlots
 
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
-products = [:A, :B]
+materials = [:A, :B]
 bom = [0 0; # B -> A
       -1 0]
-set_prop!(net, :products, products)
+set_prop!(net, :materials, materials)
 set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
@@ -54,5 +54,5 @@ fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :t
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Product = :product}, linetype=:steppost,
+fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Material = :material}, linetype=:steppost,
                     xlabel="period", ylabel="inventory position")

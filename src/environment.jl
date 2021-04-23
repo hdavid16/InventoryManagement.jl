@@ -5,8 +5,8 @@ mutable struct SupplyChainEnv <: AbstractEnv
     markets::Array #Array of markets (end distributors)
     producers::Array #Array of producer nodes
     distributors::Array #Array of distribution centers (excludes market nodes)
-    products::Array #Array of product names (strings)
-    bill_of_materials::Matrix #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow products list; positive value is a co-product, negative is a input
+    materials::Array #Array of material names
+    bill_of_materials::Matrix #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; positive value is a co-product, negative is a input
     inv_on_hand::DataFrame #Timeseries On Hand Inventory @ each node
     inv_pipeline::DataFrame #Timeseries Pipeline Inventory on each arc
     inv_position::DataFrame #Timeseries Inventory Position for each node
@@ -29,7 +29,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                         reallocate::Bool=true,
                         seed::Int=0)
     #perform checks
-        #order of products in initial_inventory, production_capacity, market_demand and demand_frequency keys must be the same
+        #order of materials in initial_inventory, production_capacity, market_demand and demand_frequency keys must be the same
 
     #get main nodes
     nodes = vertices(network)
@@ -40,88 +40,88 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     plants = [n for n in nodes if :production_cost in keys(network.vprops[n])]
     nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
     dcs = setdiff(nodes, mrkts, plants)
-    #get products
-    prods = get_prop(network, :products)
+    #get materials
+    mats = get_prop(network, :materials)
     bom = get_prop(network, :bill_of_materials)
     #check inputs
     @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
     @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
-    @assert size(bom)[1] == length(prods) "The number of rows and columns in the bill of materials must be equal to the number of materials."
+    @assert size(bom)[1] == length(mats) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
     plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity]
     dcs_keys = [:initial_inventory, :holding_cost]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in mrkts, key in market_keys
         @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
-        for p in prods
-            @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        for p in mats
+            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
         end
     end
     for n in plants, key in plant_keys
         @assert key in keys(network.vprops[n]) "$key not stored in producer node $n."
-        for p in prods
-            @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        for p in mats
+            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
         end
     end
     for n in dcs, key in dcs_keys
         @assert key in keys(network.vprops[n]) "$key not stored in distributor node $n."
-        for p in prods
-            @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        for p in mats
+            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
         end
     end
     for a in arcs, key in arc_keys
         @assert key in keys(network.eprops[Edge(a...)]) "$key not stored in arc $a."
         if key != :lead_time
-            for p in prods
-                @assert p in keys(network.eprops[Edge(a...)][key]) "Product $p not found in $key on arc $a."
+            for p in mats
+                @assert p in keys(network.eprops[Edge(a...)][key]) "Material $p not found in $key on arc $a."
             end
         end
     end
-    for n in nonsources, p in prods
+    for n in nonsources, p in mats
         key = :supplier_priority
-        @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
         for s in network.vprops[n][key][p]
-            @assert s in inneighbors(network, n) "Supplier $s is not listed in the supplier priority for node $n for product $p."
+            @assert s in inneighbors(network, n) "Supplier $s is not listed in the supplier priority for node $n for material $p."
         end
     end
     #create logging dataframes
-    inv_on_hand = DataFrame(:period => Int[], :node => Int[], :product => [], :level => Float64[])
-    for n in nodes, p in prods
+    inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[])
+    for n in nodes, p in mats
         init_inv = get_prop(network, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p]))
     end
-    inv_pipeline = DataFrame(:period => zeros(Int, length(prods)*length(arcs)),
-                             :arc => repeat(arcs, inner = length(prods)),
-                             :product => repeat(prods, outer = length(arcs)),
-                             :level => zeros(length(prods)*length(arcs)))
+    inv_pipeline = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
+                             :arc => repeat(arcs, inner = length(mats)),
+                             :material => repeat(mats, outer = length(arcs)),
+                             :level => zeros(length(mats)*length(arcs)))
     inv_position = copy(inv_on_hand)
-    replenishments = DataFrame(:period => zeros(Int, length(prods)*length(arcs)),
-                               :arc => repeat(arcs, inner = length(prods)),
-                               :product => repeat(prods, outer = length(arcs)),
-                               :amount => zeros(length(prods)*length(arcs)),
-                               :lead => zeros(Int, length(prods)*length(arcs)))
+    replenishments = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
+                               :arc => repeat(arcs, inner = length(mats)),
+                               :material => repeat(mats, outer = length(arcs)),
+                               :amount => zeros(length(mats)*length(arcs)),
+                               :lead => zeros(Int, length(mats)*length(arcs)))
     shipments = DataFrame(:arc => [],
-                          :product => [],
+                          :material => [],
                           :amount => Float64[],
                           :lead => Int[])
     production = DataFrame(:arc => [],
-                           :product => [],
+                           :material => [],
                            :amount => Float64[],
                            :lead => Int[])
-    demand = DataFrame(:period => zeros(Int, length(prods)*length(mrkts)),
-                       :node => repeat(mrkts, inner = length(prods)),
-                       :product => repeat(prods, outer = length(mrkts)),
-                       :demand => zeros(length(prods)*length(mrkts)),
-                       :sale => zeros(length(prods)*length(mrkts)),
-                       :unfulfilled => zeros(length(prods)*length(mrkts)),
-                       :backlog => zeros(length(prods)*length(mrkts)))
+    demand = DataFrame(:period => zeros(Int, length(mats)*length(mrkts)),
+                       :node => repeat(mrkts, inner = length(mats)),
+                       :material => repeat(mats, outer = length(mrkts)),
+                       :demand => zeros(length(mats)*length(mrkts)),
+                       :sale => zeros(length(mats)*length(mrkts)),
+                       :unfulfilled => zeros(length(mats)*length(mrkts)),
+                       :backlog => zeros(length(mats)*length(mrkts)))
     profit = DataFrame(:period => zeros(Int, length(nodes)),
                        :value => zeros(length(nodes)),
                        :node => nodes)
     reward = 0
     period = 0
     num_periods = num_periods
-    env = SupplyChainEnv(network, mrkts, plants, dcs, prods, bom, inv_on_hand, inv_pipeline, inv_position,
+    env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
                     profit, reward, period, num_periods, discount, backlog, reallocate, seed)
 
@@ -142,11 +142,11 @@ function reset!(env::SupplyChainEnv)
     filter!(i -> i.period == 0, env.demand)
     filter!(i -> i.period == 0, env.profit)
     env.shipments = DataFrame(:arc => [],
-                          :product => [],
+                          :material => [],
                           :amount => Float64[],
                           :lead => Int[])
     env.production = DataFrame(:arc => [],
-                           :product => [],
+                           :material => [],
                            :amount => Float64[],
                            :lead => Int[])
 
