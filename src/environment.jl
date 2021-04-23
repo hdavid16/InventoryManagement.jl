@@ -35,15 +35,16 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     #get main edges
     arcs = [(e.src,e.dst) for e in edges(network)]
     #get end distributors, producers, and distribution centers
-    mrkts = [n for n in nodes if isempty(outneighbors(network,n))] #assumes markets are at the bottom
-    plants = [n for n in nodes if isempty(inneighbors(network,n))] #assumes plants are at the top
+    mrkts = [n for n in nodes if isempty(outneighbors(network, n))] #markets must be sink nodes
+    plants = [n for n in nodes if :production_cost in keys(network.vprops[n])]
+    nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
     dcs = setdiff(nodes, mrkts, plants)
     #get products
     prods = get_prop(network, :products)
     #check inputs
-    market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :supplier_priority]
-    plant_keys = [:production_cost, :production_time, :production_capacity]
-    dcs_keys = [:initial_inventory, :holding_cost, :supplier_priority]
+    market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
+    plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity, :bill_of_materials]
+    dcs_keys = [:initial_inventory, :holding_cost]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in mrkts, key in market_keys
         @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
@@ -71,14 +72,16 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
             end
         end
     end
-    for n in union(dcs, mrkts), p in prods
-        for s in network.vprops[n][:supplier_priority][p]
+    for n in nonsources, p in prods
+        key = :supplier_priority
+        @assert p in keys(network.vprops[n][key]) "Product $p not found in $key on node $n."
+        for s in network.vprops[n][key][p]
             @assert s in inneighbors(network, n) "Supplier $s is not listed in the supplier priority for node $n for product $p."
         end
     end
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :product => [], :level => Float64[])
-    for n in setdiff(nodes, plants), p in prods
+    for n in nodes, p in prods
         init_inv = get_prop(network, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p]))
     end
@@ -113,9 +116,13 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     reward = 0
     period = 0
     num_periods = num_periods
-    SupplyChainEnv(network, mrkts, plants, dcs, prods, inv_on_hand, inv_pipeline, inv_position,
+    env = SupplyChainEnv(network, mrkts, plants, dcs, prods, inv_on_hand, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
                     profit, reward, period, num_periods, discount, backlog, reallocate, seed)
+
+    Random.seed!(env)
+
+    return env
 end
 
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
@@ -137,6 +144,8 @@ function reset!(env::SupplyChainEnv)
                            :product => [],
                            :amount => Float64[],
                            :lead => Int[])
+
+    Random.seed!(env)
 end
 
 is_terminated(env::SupplyChainEnv) = env.period == env.num_periods
