@@ -7,7 +7,7 @@
 ## Overview
 
 *InventoryManagement.jl* allows modeling a [make-to-order](en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
-- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). Reactive systems with co-products can be modelled using the `bill_of_materials` (see Model Inputs section below).
+- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final products are produced). Reactive systems with co-products can be modelled using the `bill_of_materials` (see [Model Inputs section](#graph-specific)).
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
 - `Markets`: Nodes where end-customers place final product orders. These are the last (sink) nodes in the network.
 
