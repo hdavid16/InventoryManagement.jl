@@ -48,7 +48,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
     @assert size(bom)[1] == length(prods) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
-    plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity, :bill_of_materials]
+    plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity]
     dcs_keys = [:initial_inventory, :holding_cost]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in mrkts, key in market_keys
