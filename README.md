@@ -189,7 +189,7 @@ This example is for a 100 period simulation of a supply network with one plant (
 
 ### Example 2
 
-This example is for a 100 period simulation of a supply network with one warehouse (node 1) that supplies a retailer (node 2), with stochastic demand for product `:A`. A `r,Q` reorder policy is used at the retailer.
+This example is for a 100 period simulation of a supply network with one warehouse (node 1) that supplies a retailer (node 2), with stochastic demand for product `:A`. A `r,Q` reorder policy is used at the retailer every 25 periods.
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
 
