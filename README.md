@@ -73,7 +73,7 @@ The following sequence of events occurs in each period of the simulation:
 The following assumptions hold in the current implementation, but can be modified in future releases.
 
 - `Producers` produce material on demand ([make-to-order](https://en.wikipedia.org/wiki/Build_to_order) policy).
-- `Producers` can hold inventory. Downstream replenishment orders are fulfilled first with any on-hand inventory, and then via production only after there is no on-hand inventory. 
+- `Producers` can hold inventory. Downstream replenishment orders are fulfilled first with any on-hand inventory, and then via production only after there is no on-hand inventory left. 
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Commited production orders count towards the inventory position of the downstream node.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
