@@ -42,7 +42,7 @@ This package generalizes and extends and the inventory management environment av
 *InventoryManagement.jl* mainly relies on the following packages:
 - [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Define supply network structure and specify node- and edge-specific parameters.
 - [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results.
-- [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the market demands at the end distributors.
+- [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the demands at the market nodes.
 
 ## Installation
 
@@ -128,7 +128,7 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
-- `:demand_distribution::Dict`: probability distributions for the market demands for each material (`keys`)
+- `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `[D]` where `D` is a `Number`.
 - `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each material (`keys`)
 - `:sales_price::Dict`: market sales price for each material (`keys`)
 - `:demand_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
