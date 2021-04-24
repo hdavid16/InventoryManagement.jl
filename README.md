@@ -20,7 +20,7 @@
 
 ## Overview
 
-*InventoryManagement.jl* allows modeling a [make-to-order](https://en.wikipedia.org/wiki/Build_to_order) multi-period multi-product supply network. A supply network can be constructed using the following node types:
+*InventoryManagement.jl* allows modeling a multi-period multi-product supply network. A supply network can be constructed using the following node types:
 - `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final materials are produced). Reactive systems, including those with co-products, can be modelled using [Bills of Materials](https://en.wikipedia.org/wiki/Bill_of_materials) (see [Model Inputs section](#graph-specific)).
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
 - `Markets`: Nodes where end-customers place final product orders. These are the last (sink) nodes in the network.
@@ -42,7 +42,7 @@ This package generalizes and extends and the inventory management environment av
 
 ## Installation
 
-The package can be installed with the Julia package manager. From the Julia REPL, type `]`` to enter the `Pkg` REPL mode and run:
+The package can be installed with the Julia package manager. From the Julia REPL, type `]` to enter the `Pkg` REPL mode and run:
 
 ```julia
 pkg> add https://github.com/hdavid16/InventoryManagement.jl
@@ -68,7 +68,8 @@ The following sequence of events occurs in each period of the simulation:
 
 The following assumptions hold in the current implementation, but can be modified in future releases.
 
-- `Producers` produce material on demand (`make-to-order`).
+- `Producers` produce material on demand ([make-to-order](https://en.wikipedia.org/wiki/Build_to_order) policy).
+- `Producers` can hold inventory.
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
 - Transportation costs are paid to a third party (not a node in the network).
@@ -77,6 +78,9 @@ The following assumptions hold in the current implementation, but can be modifie
 
 The following features are not currently supported:
 
+- Inventory capacity limits at the nodes is not currently supported.
+- `Producers` do not operate under a [make-to-stock](https://en.wikipedia.org/wiki/Build_to_stock) policy since any material produced gets shipped downstream. However, this can be accomodated by adding a dumby node downstream of the `producer` that holds inventory produced by the `producer` with zero lead time in between the nodes. Thus, using a proper reorder policy, the `producer` can act as a `make-to-stock` system that pushes inventory to the inventory holding node.
+- `Producers` do not have market demand. However, this can be modelled by adding a `market` node downstream of the `producer` with zero lead time in between the nodes.
 - Alternate bills of materials (see [Model Inputs](#graph-specific)) for the same material are not currently supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
   - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for material `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for material `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made.
   - Make a copy of the material to specify an alternate pathway. This will require specifying parameters for the copied material throughout the network.
