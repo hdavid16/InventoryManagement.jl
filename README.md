@@ -16,7 +16,7 @@
 8. [Model Inputs](#model-inputs)
 9. [Model Output](#model-output)
 10. [Examples](#examples)
-    - [Example #1: 2-node production system with limited raw materials and continuous review](#example-1)
+    - [Example #1: 3-node production system with limited raw materials, alternate supplier, and continuous inventory review](#example-1)
     - [Example #2: 2-node system with unlimited supply and periodic review](#example-2)
     - [Example #3: order reallocation based on supplier priority](#example-3)
     - [Example #4: make-to-stock with market demand](#example-4)
@@ -108,7 +108,7 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `kind::Symbol`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy
 - `supplier_selection::Symbol`: evenly distribute reorder quantities among all suppliers if `:random`; otherwise (if `:priority`), assign reorder quantities based on supplier priority (e.g., if supplier 1 does not have enough capacity or inventory, then request as much as possible and then request any remaining amount from the next supplier, and so forth).
 - `review_period::Int`: number of periods between each inventory review (Default = `1` for continuous review. *Note*: only relevant when `level = :on_hand`)
- 
+
 ## Model Inputs
 
 ### Node-specific
@@ -180,7 +180,7 @@ A `SupplyChainEnv` has the following fields:
 
 ### Example 1
 
-The example below is for a 100 period simulation of a supply network with one plant (node 1) that supplies and end distributor (node 2). A `s,S` reorder policy is used. There is limited raw material supply at the plant.
+The example below is for a 100 period simulation of a supply network with one plant (node 1) that supplies a market (node 3), with stochastic demand for product `:A`. Node 3, has an alternate supplier, which is a distribution center (node 2). Node 3 prefers replenishing from the plant, which has a lower lead time. A `s,S` reorder policy is used. There is limited raw material supply at the plant. When raw material (`:B`) stocks-out, node 3 switches to node 2 for its supply.
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl).*
 
