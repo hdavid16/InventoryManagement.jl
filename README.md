@@ -15,8 +15,13 @@
 7. [Inventory replenishment policies](#inventory-replenishment-policies)
 8. [Model Inputs](#model-inputs)
 9. [Model Output](#model-output)
-10. [Example](#example)
-11. [Contact](#contact)
+10. [Example #1: 2-node production system with limited raw materials and continuous review](#example-1)
+11. [Example #2: 2-node system with unlimited supply and periodic review](#example-2)
+12. [Example #3: order reallocation based on supplier priority](#example-3)
+13. [Example #4: make-to-stock with market demand](#example-4)
+14. [Example #5: order satisfaction with on-hand inventory and commited production at the plant](#example-5)
+15. [Example #6: chemical production system with co-production and recycles](#example-6)
+16. [Contact](#contact)
 
 ## Overview
 
@@ -170,9 +175,9 @@ A `SupplyChainEnv` has the following fields:
 - `reallocate::Bool`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
 - `seed::Int`: random seed
 
-## Example
+## Example 1
 
-The example below is for a 100 period simulation of a supply network with one plant (node 1) that supplies and end distributor (node 2). A `s,S` reorder policy is used.
+The example below is for a 100 period simulation of a supply network with one plant (node 1) that supplies and end distributor (node 2). A `s,S` reorder policy is used. There is limited raw material supply at the plant.
 
 ```julia
 using LightGraphs, MetaGraphs, DataFrames, Distributions
@@ -236,6 +241,16 @@ fig2 = @df env.inv_position plot(:period, :level, group={Node = :node, Material 
 ```
 ![](examples/figs/ex1_profit.png)
 ![](examples/figs/ex1_position.png)
+
+## Example 2
+
+## Example 3
+
+## Example 4
+
+## Example 5
+
+## Example 6
 
 ## Contact
 
