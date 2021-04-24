@@ -19,8 +19,7 @@
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
     - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
     - [Example #3: make-to-stock with market demand](#example-3)
-    - [Example #5: order satisfaction with on-hand inventory and commited production at the plant](#example-5)
-    - [Example #6: chemical production system with co-production and recycles](#example-6)
+    - [Example #4: chemical production system with co-production and recycles](#example-4)
 11. [Contact](#contact)
 
 ## Overview
@@ -74,7 +73,7 @@ The following sequence of events occurs in each period of the simulation:
 The following assumptions hold in the current implementation, but can be modified in future releases.
 
 - `Producers` produce material on demand ([make-to-order](https://en.wikipedia.org/wiki/Build_to_order) policy).
-- `Producers` can hold inventory.
+- `Producers` can hold inventory. Downstream replenishment orders are fulfilled first with any on-hand inventory, and then via production only after there is no on-hand inventory. 
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Commited production orders count towards the inventory position of the downstream node.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
@@ -179,7 +178,7 @@ A `SupplyChainEnv` has the following fields:
 
 ### Example 1
 
-This example is for a 100 period simulation of a supply network with one plant (node 1) that supplies a retailer (node 3), with stochastic demand for product `:A`. Node 3, has an alternate supplier, which is a distribution center (node 2). Node 3 prefers replenishing from the plant, which has a lower lead time. A `s,S` reorder policy is used. There is limited raw material supply at the plant. When raw material (`:B`) stocks-out, node 3 switches to node 2 for its supply.
+This example is for a 100 period simulation of a supply network with one plant (node 1) that supplies a retailer (node 3), with stochastic demand for product `:A`. Node 3, has an alternate supplier, which is a distribution center (node 2). Node 3 prefers replenishing from the plant, which has a lower lead time. A `(s,S)` reorder policy is used at the retailer. When the on-hand level for material `:A` is depleted at the plant, the plant begins transforming raw material `:B` into `:A`. There is limited raw material supply at the plant. When the raw material stocks-out, node 3 switches to node 2 for its supply.
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl).*
 
@@ -188,7 +187,7 @@ This example is for a 100 period simulation of a supply network with one plant (
 
 ### Example 2
 
-This example is for a 100 period simulation of a supply network with one warehouse (node 1) that supplies a retailer (node 2), with stochastic demand for product `:A`. A `r,Q` reorder policy is used at the retailer every 25 periods.
+This example is for a 100 period simulation of a supply network with one warehouse (node 1) that supplies a retailer (node 2), with stochastic demand for product `:A`. A `(r,Q)` reorder policy is used at the retailer every 25 periods.
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
 
@@ -197,10 +196,6 @@ This example is for a 100 period simulation of a supply network with one warehou
 ### Example 3
 
 ### Example 4
-
-### Example 5
-
-### Example 6
 
 ## Contact
 
