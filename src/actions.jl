@@ -158,9 +158,10 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
 
     #update inventory positions for non-market nodes
     for n in union(x.producers, x.distributors), p in x.materials #update distribution centers (not plants, not end distributors [markets])
-        upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level)
-        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1]
-        push!(x.inv_position, [x.period, n, p, onhand + upstream]) #update inventory
+        making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
+        upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level) #in-transit inventory
+        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
+        push!(x.inv_position, [x.period, n, p, onhand + making + upstream]) #update inventory
     end
 
     #markets open and demand occurs
@@ -184,9 +185,10 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                       (x.inv_on_hand.material .== p), :level] .-= demand[5]
 
         #update inventory position
-        upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level)
-        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1]
-        push!(x.inv_position, [x.period, n, p, onhand + upstream - demand[7]]) #update inventory (include backlog)
+        making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
+        upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level) #in-transit inventory
+        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on-hand inventory
+        push!(x.inv_position, [x.period, n, p, onhand + making + upstream - demand[7]]) #update inventory (include backlog)
     end
 
     #calculate profit at each node
@@ -248,7 +250,7 @@ select_any_supplier(::T) where T = true
 
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                 level::Symbol = :position, kind::Symbol = :rQ,
-                supplier_selection::Symbol = :priority)
+                supplier_selection::Symbol = :priority, review_period::Int = 1)
 
     #read parameters
     t = env.period
@@ -267,13 +269,18 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     #initialize action matrix
     action = zeros(length(mats), length(arcs))
     for n in nodes, (k, p) in enumerate(mats)
+        trigger = false #trigger an inventory replenishment order
+        reorder = 0
+        #check if reorder is triggered
         if level == :on_hand
+            state0 = filter(i -> i.period == t-review_period && i.node == n && i.material == p, env.inv_on_hand).level[1]
             state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_on_hand).level[1]
+            trigger = state0 > param1[n,p] >= state #only reorder first time going past the threshold
         elseif level == :position
             state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_position).level[1]
+            trigger = param1[n,p] >= state
         end
-        trigger = param1[n,p] > state
-        reorder = 0
+        #set reorder policy
         if trigger
             if kind == :rQ #rQ policy
                 reorder = param2[n,p]
@@ -283,7 +290,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         else
             reorder = 0
         end
-
+        #assign reorder quantities
         if supplier_selection == :random
             suppliers = length(inneighbors(env.network, n))
             for src in inneighbors(env.network, n)
