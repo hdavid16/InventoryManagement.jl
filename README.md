@@ -71,6 +71,7 @@ The following assumptions hold in the current implementation, but can be modifie
 - `Producers` produce material on demand ([make-to-order](https://en.wikipedia.org/wiki/Build_to_order) policy).
 - `Producers` can hold inventory.
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
+- Commited production orders count towards the inventory position of the downstream node.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
 - Transportation costs are paid to a third party (not a node in the network).
 
