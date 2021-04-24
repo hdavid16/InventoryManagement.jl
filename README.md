@@ -182,7 +182,7 @@ A `SupplyChainEnv` has the following fields:
 
 The example below is for a 100 period simulation of a supply network with one plant (node 1) that supplies and end distributor (node 2). A `s,S` reorder policy is used. There is limited raw material supply at the plant.
 
-See [code](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl)
+**See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl)**
 
 ![](examples/figs/ex1_profit.png)
 ![](examples/figs/ex1_position.png)
