@@ -16,7 +16,7 @@
 8. [Model Inputs](#model-inputs)
 9. [Model Output](#model-output)
 10. [Examples](#examples)
-    - [Example #1: limited raw materials, alternate suppliers, and continuous inventory review](#example-1)
+    - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
     - [Example #2: 2-node system with unlimited supply and periodic review](#example-2)
     - [Example #3: order reallocation based on supplier priority](#example-3)
     - [Example #4: make-to-stock with market demand](#example-4)
