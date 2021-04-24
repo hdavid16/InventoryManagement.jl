@@ -42,7 +42,7 @@ This package generalizes and extends and the inventory management environment av
 
 ## Installation
 
-The package can be installed with the Julia package manager. From the Julia REPL, type `]`` to enter the `Pkg` REPL mode and run:
+The package can be installed with the Julia package manager. From the Julia REPL, type `]` to enter the `Pkg` REPL mode and run:
 
 ```julia
 pkg> add https://github.com/hdavid16/InventoryManagement.jl
