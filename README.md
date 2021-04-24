@@ -18,8 +18,8 @@
 10. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
     - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
-    - [Example #3: make-to-stock with market demand](#example-3)
-    - [Example #4: chemical production system with co-production and recycles](#example-4)
+    - [Example #3: make-to-stock plant with market demand](#example-3)
+    - [Example #4: chemical production system with co-production and material recycle](#example-4)
 11. [Contact](#contact)
 
 ## Overview
