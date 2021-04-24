@@ -29,7 +29,7 @@
 *InventoryManagement.jl* allows modeling a multi-period multi-product supply network. A supply network can be constructed using the following node types:
 - `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final materials are produced). Reactive systems, including those with co-products, can be modelled using [Bills of Materials](https://en.wikipedia.org/wiki/Bill_of_materials) (see [Model Inputs section](#graph-specific)).
 - `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
-- `Markets`: Nodes where end-customers place final product orders. These are the last (sink) nodes in the network.
+- `Markets`: Nodes where end-customers place final product orders (i.e., retailer). These are the last (sink) nodes in the network.
 
 The simplest network that can be modeled is one with a single market with one producer or distributor. However, more complex systems can be modelled as well.
 
@@ -180,7 +180,7 @@ A `SupplyChainEnv` has the following fields:
 
 ### Example 1
 
-The example below is for a 100 period simulation of a supply network with one plant (node 1) that supplies a market (node 3), with stochastic demand for product `:A`. Node 3, has an alternate supplier, which is a distribution center (node 2). Node 3 prefers replenishing from the plant, which has a lower lead time. A `s,S` reorder policy is used. There is limited raw material supply at the plant. When raw material (`:B`) stocks-out, node 3 switches to node 2 for its supply.
+This example is for a 100 period simulation of a supply network with one plant (node 1) that supplies a retailer (node 3), with stochastic demand for product `:A`. Node 3, has an alternate supplier, which is a distribution center (node 2). Node 3 prefers replenishing from the plant, which has a lower lead time. A `s,S` reorder policy is used. There is limited raw material supply at the plant. When raw material (`:B`) stocks-out, node 3 switches to node 2 for its supply.
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl).*
 
@@ -188,6 +188,8 @@ The example below is for a 100 period simulation of a supply network with one pl
 ![](examples/figs/ex1_position.png)
 
 ### Example 2
+
+This example is for a 100 period simulation of a supply network with one warehouse (node 1) that supplies a retailer (node 2), with stochastic demand for product `:A`. A `r,Q` reorder policy is used at the retailer.
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
 
