@@ -17,7 +17,7 @@
 9. [Model Output](#model-output)
 10. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
-    - [Example #2: 2-node system with unlimited supply and periodic review](#example-2)
+    - [Example #2: unlimited supply and periodic (r,Q) policy](#example-2)
     - [Example #3: order reallocation based on supplier priority](#example-3)
     - [Example #4: make-to-stock with market demand](#example-4)
     - [Example #5: order satisfaction with on-hand inventory and commited production at the plant](#example-5)
@@ -188,6 +188,10 @@ The example below is for a 100 period simulation of a supply network with one pl
 ![](examples/figs/ex1_position.png)
 
 ### Example 2
+
+*See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
+
+![](examples/figs/ex2_inventory.png)
 
 ### Example 3
 
