@@ -17,7 +17,7 @@
 9. [Model Output](#model-output)
 10. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
-    - [Example #2: unlimited supply and periodic (r,Q) policy](#example-2)
+    - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
     - [Example #3: order reallocation based on supplier priority](#example-3)
     - [Example #4: make-to-stock with market demand](#example-4)
     - [Example #5: order satisfaction with on-hand inventory and commited production at the plant](#example-5)
