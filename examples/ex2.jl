@@ -2,77 +2,54 @@ using LightGraphs, MetaGraphs, DataFrames, Distributions
 using InventoryManagement, StatsPlots
 
 #define network connectivity
-adjmx = [0 0 1;
-         0 0 1;
-         0 0 0]
-net = MetaDiGraph(adjmx)
-materials = [:A, :B, :C, :D, :E]
+net = MetaDiGraph(path_digraph(2)) # 1 -> 2
+materials = [:A]
+bom = [0]
 set_prop!(net, :materials, materials)
+set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
-set_props!(net, 1, Dict(:production_cost => Dict(p => 0.01 for p in materials),
-                        :production_time => Dict(p => 1 for p in materials),
-                        :production_capacity => Dict(p => Inf for p in materials)))
+set_props!(net, 1, Dict(:initial_inventory => Dict(:A => Inf),
+                        :holding_cost => Dict(:A => 0)))
 
-set_props!(net, 2, Dict(:production_cost => Dict(p => 0.01 for p in materials),
-                        :production_time => Dict(p => 1 for p in materials),
-                        :production_capacity => Dict(p => Inf for p in materials)))
-
-set_props!(net, 3, Dict(:initial_inventory => Dict(p => 10 for p in materials),
-                        :holding_cost => Dict(p => 0.01 for p in materials),
-                        :demand_distribution => Dict(p => Normal(5,0.5) for p in materials),
-                        :demand_frequency => Dict(p => 0.5 for p in materials),
-                        :sales_price => Dict(p => 3 for p in materials),
-                        :demand_penalty => Dict(p => 0.01 for p in materials)))
+set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100),
+                        :holding_cost => Dict(:A => 0.01),
+                        :demand_distribution => Dict(:A => Normal(5,0.5)),
+                        :demand_frequency => Dict(:A => 0.5),
+                        :sales_price => Dict(:A => 3),
+                        :demand_penalty => Dict(:A => 0.01),
+                        :supplier_priority => Dict(:A => [1])))
 
 #specify sales prices, transportation costs, lead time
-set_props!(net, 1, 3, Dict(:sales_price => Dict(p => 2 for p in materials),
-                          :transportation_cost => Dict(p => 0.01 for p in materials),
-                          :lead_time => Poisson(5)))
-
-set_props!(net, 2, 3, Dict(:sales_price => Dict(p => 2 for p in materials),
-                          :transportation_cost => Dict(p => 0.01 for p in materials),
+set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
+                          :transportation_cost => Dict(:A => 0.01),
                           :lead_time => Poisson(5)))
 
 #create environment
-env = SupplyChainEnv(net, 30)
+num_periods = 100
+env = SupplyChainEnv(net, num_periods)
 
-#define action (random with mean 5)
-action = rand(10)*10
+#define reorder policy parameters
+policy = :rQ #(s, S) policy
+on = :on_hand #monitor inventory position
+review_period = 25
+r = Dict((2,:A) => 20) #lower bound on inventory
+Q = Dict((2,:A) => 80) #base stock level
 
-#run simulation
+#run simulation with reorder policy
 for t in 1:env.num_periods
+    if mod(t,review_period) == 0
+        action = reorder_policy(env, r, Q, on, policy, :priority, review_period)
+    else
+        action = zeros(1)
+    end
     (env)(action)
 end
 
 #make plots
-#profit
-node_profit = groupby(env.profit, :node)
-profit = transform(node_profit, :value => cumsum)
-fig = @df profit plot(:period, :value_cumsum, group=:node, legend = :topleft,
-                    xlabel="period", ylabel="cumulative profit")
-display(fig)
-#on hand inventory
-onhand = filter(i -> i.node in union(env.distributors, env.markets), env.inv_on_hand)
-fig = @df onhand plot(:period, :level, group=(:node, :material), linetype=:steppost,
-                    xlabel="period", ylabel="on hand inventory level")
-display(fig)
-#inventory position
-position = filter(i -> i.node in union(env.distributors, env.markets), env.inv_position)
-fig = @df position plot(:period, :level, group=(:node, :material), linetype=:steppost,
-                    xlabel="period", ylabel="inventory position")
-display(fig)
-#production
-production = filter(i -> i.arc[1] in env.producers, env.replenishments)
-transform!(production, :arc .=> ByRow(y -> y[1]) .=> :plant)
-fig = @df production plot(:period, :amount, group=(:plant,:material), linetype=:steppost,
-                xlabel="period", ylabel="units produced")
-display(fig)
-#demand profile
-demand = filter(i -> i.node in env.markets, env.demand)
-fig = @df demand plot(:period, :demand, group=:material, linetype=:steppost,
-                xlabel="period", ylabel="demand")
-display(fig)
-fig = @df demand plot(:period, :unfulfilled, group=:material, legend=:topleft, linetype=:steppost,
-                xlabel="period", ylabel="unfulfilled demand")
-display(fig)
+#unfulfilled
+fig1 = plot(env.demand.period, env.demand.backlog, linetype=:steppost, lab="backlog",
+                    xlabel="period", ylabel="level", title="Node 2, Material A")
+#add inventory position
+inv_on_hand = filter(i -> i.level < Inf, env.inv_on_hand)
+plot!(inv_on_hand.period, inv_on_hand.level, linetype=:steppost, lab = "on-hand inventory")

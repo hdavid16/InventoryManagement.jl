@@ -45,9 +45,10 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     capacities = Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers)
 
     #place requests
+    nonsources = [n for n in vertices(x.network) if !isempty(inneighbors(x.network, n))]
     for i in 1:length(mats) #loop by materials
         p = mats[i] #material requested
-        for n in union(x.distributors, x.markets) #loop by nodes placing requests
+        for n in nonsources #loop by nodes placing requests
             sup_priority = get_prop(x.network, n, :supplier_priority)[p] #get supplier priority list
             for sup in sup_priority #loop by supplier priority
                 a = (sup, n) #arc
@@ -273,7 +274,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         reorder = 0
         #check if reorder is triggered
         if level == :on_hand
-            state0 = filter(i -> i.period == t-review_period && i.node == n && i.material == p, env.inv_on_hand).level[1]
+            state0 = filter(i -> i.period == max(t-review_period,0) && i.node == n && i.material == p, env.inv_on_hand).level[1]
             state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_on_hand).level[1]
             trigger = state0 > param1[n,p] >= state #only reorder first time going past the threshold
         elseif level == :position

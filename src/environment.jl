@@ -6,7 +6,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     producers::Array #Array of producer nodes
     distributors::Array #Array of distribution centers (excludes market nodes)
     materials::Array #Array of material names
-    bill_of_materials::Matrix #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; positive value is a co-product, negative is a input
+    bill_of_materials::Array #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; positive value is a co-product, negative is a input
     inv_on_hand::DataFrame #Timeseries On Hand Inventory @ each node
     inv_pipeline::DataFrame #Timeseries Pipeline Inventory on each arc
     inv_position::DataFrame #Timeseries Inventory Position for each node
@@ -44,8 +44,10 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     mats = get_prop(network, :materials)
     bom = get_prop(network, :bill_of_materials)
     #check inputs
-    @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
-    @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
+    if bom != [0] #if [0] then single product, no bom
+        @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
+        @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
+    end
     @assert size(bom)[1] == length(mats) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     market_keys = [:initial_inventory, :holding_cost, :demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
     plant_keys = [:initial_inventory, :holding_cost, :production_cost, :production_time, :production_capacity]
