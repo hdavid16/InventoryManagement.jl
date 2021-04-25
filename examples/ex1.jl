@@ -13,13 +13,13 @@ set_prop!(net, :materials, materials)
 set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
-set_props!(net, 1, Dict(:initial_inventory => Dict(:A => 0, :B => 120),
+set_props!(net, 1, Dict(:initial_inventory => Dict(:A => 75, :B => 100),
                         :holding_cost => Dict(:A => 0, :B => 0),
                         :production_cost => Dict(:A => 0.01, :B => 0),
                         :production_time => Dict(:A => 0, :B => 0),
                         :production_capacity => Dict(:A => Inf, :B => 0)))
 
-set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 140, :B => 0),
+set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 125, :B => 0),
                         :holding_cost => Dict(:A => 0, :B => 0)))
 
 set_props!(net, 3, Dict(:initial_inventory => Dict(:A => 100, :B => 0),
@@ -47,7 +47,7 @@ env = SupplyChainEnv(net, num_periods)
 #define reorder policy parameters
 policy = :sS #(s, S) policy
 on = :position #monitor inventory position
-s = Dict((3,:A) => 20, (3,:B) => 0) #lower bound on inventory
+s = Dict((3,:A) => 50, (3,:B) => 0) #lower bound on inventory
 S = Dict((3,:A) => 100, (3,:B) => 0) #base stock level
 
 #run simulation with reorder policy
@@ -64,6 +64,6 @@ fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :t
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-inv_position = filter(i -> i.node > 1 ? i.material == :A : i.material == :B, env.inv_position)
-fig2 = @df inv_position plot(:period, :level, group={Node = :node, Material = :material}, linetype=:steppost,
-                    xlabel="period", ylabel="inventory position")
+inv_position = filter(i -> i.node > 1 ? i.material == :A : i.material in [:A,:B], env.inv_position)
+fig2 = @df inv_position plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
+                    xlabel="period", ylabel="inventory position", yticks = 0:25:125)
