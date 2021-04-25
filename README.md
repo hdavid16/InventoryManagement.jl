@@ -138,7 +138,7 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 All edges have the following fields in their metadata:
 - `:sales_price::Dict`: unit sales price for inventory sent on that edge (from supplier to receiver) for each material (`keys`)
 - `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each material (`keys`)
-- `:lead_time::Distribution{Univariate, Discrete}`: the probability distribution from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead time for each material (`keys`) on that edge. For deterministic lead times, instead of using a probability distribution, use `[L]` where `L` is a `Number`.
+- `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. For deterministic lead times, instead of using a probability distribution, use `[L]` where `L` is a `Number`.
 
 ### Graph-specific
 
