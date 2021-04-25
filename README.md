@@ -21,7 +21,7 @@
 10. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
     - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
-    - [Example #3: chemical production system with co-production and material recycle](#example-3)
+    - [Example #3: chemical production facility](#example-3)
 11. [Contact](#contact)
 
 ## Overview
@@ -199,7 +199,7 @@ This example is for a 100 period simulation of a supply network with one warehou
 
 ### Example 3
 
-### Example 4
+This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub). 
 
 ## Contact
 
