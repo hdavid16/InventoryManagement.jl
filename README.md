@@ -112,6 +112,8 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 
 ## Model Inputs
 
+The supply network topology must be mapped on a network graph using [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl). The system parameters are stored in the network's metadata. 
+
 ### Node-specific
 
 `Producers` will have the following fields in their node metadata:
