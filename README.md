@@ -17,7 +17,7 @@
     - [Node-specific](#node-specific)
     - [Edge-specific](#edge-specific)
     - [General (Network)](#general-network)
-9. [Model Output](#model-output)
+9. [Model Output: SupplyChainEnv](#model-output)
 10. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
     - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
