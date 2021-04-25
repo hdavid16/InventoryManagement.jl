@@ -16,7 +16,7 @@
 8. [Model Inputs](#model-inputs)
     - [Node-specific](#node-specific)
     - [Edge-specific](#edge-specific)
-    - [General (Network-specific)](#graph-soecific)
+    - [General Network)](#general-network)
 9. [Model Output](#model-output)
 10. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
@@ -143,7 +143,7 @@ All edges have the following fields in their metadata:
 - `:transportation_cost::Dict`: unit transportation cost per period for inventory in-transit for each material (`keys`)
 - `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. For deterministic lead times, instead of using a probability distribution, use `[L]` where `L` is a `Number`.
 
-### Graph-specific
+### General Network
 
 The graph metadata should have the following fields in its metadata:
 - `:materials::Vector` with a list of all materials in the system.
