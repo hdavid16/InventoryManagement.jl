@@ -1,5 +1,5 @@
 using LightGraphs, MetaGraphs, DataFrames, Distributions
-using InventoryManagement, StatsPlots
+using InventoryManagement, StatsPlots, Random
 
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
@@ -10,9 +10,11 @@ set_prop!(net, :bill_of_materials, bom)
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(:initial_inventory => Dict(:A => Inf),
+                        :inventory_capacity => Dict(:A => Inf),
                         :holding_cost => Dict(:A => 0)))
 
 set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100),
+                        :inventory_capacity => Dict(:A => Inf),
                         :holding_cost => Dict(:A => 0.01),
                         :demand_distribution => Dict(:A => Normal(5,0.5)),
                         :demand_frequency => Dict(:A => 0.5),
@@ -28,6 +30,7 @@ set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
 #create environment
 num_periods = 100
 env = SupplyChainEnv(net, num_periods)
+Random.seed!(env) #set random seed
 
 #define reorder policy parameters
 policy = :rQ #(s, S) policy

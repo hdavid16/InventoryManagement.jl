@@ -55,25 +55,38 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                 j = findfirst(k -> k == a, arcs) #find index for that arc in the action matrix
                 amount = act[i,j] #amount requested
                 supply = filter(k -> k.period == x.period && k.node == a[1] && k.material == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
+                sched_supply = filter(k -> k.arc == (a[1],a[1]) && k.material == p, x.production)[:,[:amount,:lead]] #check if any inventory is scheduled for production, but not commited to downstream node
+                sched_supp, sched_lead = isempty(sched_supply) ? [0,0] : sched_supply[1,[:amount,:lead]]
                 #accept or adjust requests
                 if a[1] in x.producers
-                    capacity = capacities[a[1]][p] #get production capacity
+                    capacity = [capacities[a[1]][p]] #get production capacity
                     mat_supply = [] #store max capacity based on raw material consumption for each raw material
                     imats = findall(k -> !iszero(k), bom[:,i]) #indices of materials involved with production of p
                     for ii in imats
                         sup_pp = filter(k -> k.period == x.period && k.node == a[1] && k.material == mats[ii], x.inv_on_hand).level[1] #supply of pp
                         if bom[ii,i] < 0 #only account for raw materials that are in the BOM
                             push!(mat_supply, - sup_pp / bom[ii,i])
+                        elseif bom[ii,i] > 0 #add capacity constraint for any co-products
+                            push!(capacity, capacities[a[1]][mats[ii]])
                         end
                     end
                     accepted_inv = min(amount, supply) #try to satisfy with on hand inventory first
-                    accepted_prod = min(amount - accepted_inv, capacity, mat_supply...) #fulfill remaining with available capacity
-                    capacities[a[1]][p] = capacity - accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
-                    accepted = accepted_inv + accepted_prod
+                    accepted_sched = min(amount - accepted_inv, sched_supp) #try to satisfy with scheduled production that is not commited
+                    accepted_prod = min(amount - accepted_inv - accepted_sched, capacity..., mat_supply...) #fulfill remaining with available capacity
+                    capacities[a[1]][p] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
+                    accepted = accepted_inv + accepted_sched + accepted_prod
 
                     #schedule production
                     prod_time = get_prop(x.network, a[1], :production_time)[p] #production time
                     push!(x.production, (a, p, accepted_prod, prod_time))
+
+                    #update commited scheduled production of byproducts to new destination (decrease amount sent to self storage and add commited amount to arc)
+                    if accepted_sched > 0
+                        x.production[(string.(x.inv_pipeline.arc) .== string((a[1],a[1]))) .&
+                                     (x.production.material .== p) .&
+                                     x.production.lead .== sched_lead, :amount] .-= accepted_sched
+                        push!(x.production, (a, p, accepted_sched, sched_lead))
+                    end
 
                     #update inventories
                     x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
@@ -83,9 +96,15 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                                    (string.(x.inv_pipeline.arc) .== string(a)) .&
                                    (x.inv_pipeline.material .== p), :level] .+= accepted_inv
                     for ii in imats
-                        x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
-                                      (x.inv_on_hand.node .== a[1]) .&
-                                      (x.inv_on_hand.material .== mats[ii]), :level] .+= accepted_prod * bom[ii,i]
+                        if bom[ii,i] < 0 #reactant consumed
+                            x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
+                                          (x.inv_on_hand.node .== a[1]) .&
+                                          (x.inv_on_hand.material .== mats[ii]), :level] .+= accepted_prod * bom[ii,i]
+                        elseif bom[ii,i] > 0 #coproducts scheduled for production
+                            a1 = (a[1],a[1]) #production of byproduct is going to inventory holding at current node (not being shipped)
+                            push!(x.production, (a1, mats[ii], accepted_prod*bom[ii,i], prod_time))
+                            capacities[a[1]][mats[ii]] -= accepted_prod*bom[ii,i]
+                        end
                     end
                 else
                     accepted = min(amount, supply) #accepted request
@@ -120,8 +139,10 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                     lead = leads[Edge(a[1],a[end])]
                     if a[1] in x.producers
                         push!(x.shipments, [a, p, accepted_inv, lead])
+                        push!(x.shipments, [a, p, accepted_sched, lead + sched_lead])
                         push!(x.shipments, [a, p, accepted_prod, lead + prod_time])
                         push!(x.replenishments, [x.period, a, p, accepted_inv, lead])
+                        push!(x.replenishments, [x.period, a, p, accepted_sched, lead + sched_lead])
                         push!(x.replenishments, [x.period, a, p, accepted_prod, lead + prod_time])
                     else
                         push!(x.shipments, [a, p, accepted, lead])
@@ -138,11 +159,17 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     produced = filter(i -> iszero(i.lead), x.production) #find active production that has completed
     for i in 1:nrow(produced) #add produced material to pipeline
         a, p, amount = produced[i, [:arc, :material, :amount]]
-        x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
-                       (string.(x.inv_pipeline.arc) .== string(a)) .&
-                       (x.inv_pipeline.material .== p), :level] .+= amount
+        if a[1] != a[2] #send produced material down pipeline
+            x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
+                           (string.(x.inv_pipeline.arc) .== string(a)) .&
+                           (x.inv_pipeline.material .== p), :level] .+= amount
+        else #send produced material to storage that node
+            x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
+                          (x.inv_on_hand.node .== a[1]) .&
+                          (x.inv_on_hand.material .== p), :level] .+= amount
+        end
     end
-    filter!(i -> i.lead > 0, x.production) #remove produced inventory that was shipped
+    filter!(i -> i.lead > 0 && i.amount > 0, x.production) #remove produced inventory that was shipped (and any zero values)
 
     #update on hand and pipeline inventories due to arrived shipments
     arrivals = filter(i -> iszero(i.lead) && !iszero(i.amount), x.shipments) #find active shipments with 0 lead time
@@ -155,7 +182,19 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                        (string.(x.inv_pipeline.arc) .== string(a)) .&
                        (x.inv_pipeline.material .== p), :level] .-= amount
     end
-    filter!(i -> i.lead > 0, x.shipments) #remove shipments that arrived
+    filter!(i -> i.lead > 0 && i.amount > 0, x.shipments) #remove shipments that arrived (and any zero values)
+
+    #discard any excess inventory
+    for n in vertices(x.network), p in mats
+        max_inv = get_prop(x.network, n, :inventory_capacity)[p]
+        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
+        if onhand > max_inv
+            @warn "$(on_hand - max_inv) units of material $p discarded at node $n because maximum inventory was exceeded in period $(x.period)."
+            x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
+                          (x.inv_on_hand.node .== n) .&
+                          (x.inv_on_hand.material .== p), :level] .= max_inv
+        end
+    end
 
     #update inventory positions for non-market nodes
     for n in union(x.producers, x.distributors), p in x.materials #update distribution centers (not plants, not end distributors [markets])
