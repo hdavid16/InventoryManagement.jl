@@ -75,7 +75,7 @@ The following sequence of events occurs in each period of the simulation:
 The following assumptions hold in the current implementation, but can be modified in future releases.
 
 - `Producers` produce material on demand ([make-to-order](https://en.wikipedia.org/wiki/Build_to_order) policy).
-- `Producers` can hold inventory. Downstream replenishment orders are fulfilled first with any on-hand inventory, and then via production only after there is no on-hand inventory left. 
+- `Producers` can hold inventory. Downstream replenishment orders are fulfilled first with any on-hand inventory, and then via production only after there is no on-hand inventory left.
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Commited production orders count towards the inventory position of the downstream node.
 - Backlogging is only allowed at the `Markets`, it is not allowed for inventory replenishment decisions.
@@ -111,12 +111,13 @@ The `reorder_policy` takes the following inputs and returns an `action` vector.
 
 ## Model Inputs
 
-The supply network topology must be mapped on a network graph using [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl). The system parameters are stored in the network's metadata. 
+The supply network topology must be mapped on a network graph using [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl). The system parameters are stored in the network's metadata.
 
 ### Node-specific
 
 `Producers` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
+- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 - `:production_cost::Dict`: unit production cost for each material (`keys`)
@@ -125,11 +126,13 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 
 `Distributors` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
+- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 
 `Markets` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
+- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `[D]` where `D` is a `Number`.
@@ -167,7 +170,7 @@ A `SupplyChainEnv` has the following fields:
 - `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
 - `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
 - `shipments::DataFrame`: current shipments and time to arrival for each node
-- `production::DataFrame`: current material production committed to an edge and lead time to ship
+- `production::DataFrame`: current material production committed to an edge and lead time to ship. Note: byproducts are scheduled to go to the producing node `n` (edge `(n,n)`).
 - `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
 - `profit::DataFrame`: timeseries with profit at each node
 - `reward::Float64`: reward in the system (used for RL)
@@ -199,7 +202,7 @@ This example is for a 100 period simulation of a supply network with one warehou
 
 ### Example 3
 
-This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub). 
+This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub).
 
 ## Contact
 
