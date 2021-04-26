@@ -202,7 +202,9 @@ This example is for a 100 period simulation of a supply network with one warehou
 
 ### Example 3
 
-This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub).
+This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub), which can be modeled as the following supply chain:
+
+![](examples/figs/KondiliExample.png)
 
 ## Contact
 
