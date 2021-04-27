@@ -95,25 +95,27 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
         key = :supplier_priority
         @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
         for s in network.vprops[n][key][p]
-            @assert s in inneighbors(network, n) "Supplier $s is not listed in the supplier priority for node $n for material $p."
+            @assert s in inneighbors(network, n) "Supplier $s is not a supplier to node $n, but is listed in the supplier priority for that node for material $p."
         end
     end
     #create logging dataframes
-    inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[])
+    inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
     for n in nodes, p in mats
         init_inv = get_prop(network, n, :initial_inventory)
-        push!(inv_on_hand, (0, n, p, init_inv[p]))
+        push!(inv_on_hand, (0, n, p, init_inv[p], 0))
     end
     inv_pipeline = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
                              :arc => repeat(arcs, inner = length(mats)),
                              :material => repeat(mats, outer = length(arcs)),
                              :level => zeros(length(mats)*length(arcs)))
-    inv_position = copy(inv_on_hand)
-    replenishments = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
-                               :arc => repeat(arcs, inner = length(mats)),
-                               :material => repeat(mats, outer = length(arcs)),
-                               :amount => zeros(length(mats)*length(arcs)),
-                               :lead => zeros(Int, length(mats)*length(arcs)))
+    inv_position = select(inv_on_hand, [:period, :node, :material, :level])
+    replenishments = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(arcs)),
+                               :arc => Tuple[],#repeat(arcs, inner = length(mats)),
+                               :material => Any[],#repeat(mats, outer = length(arcs)),
+                               :amount => Float64[],#zeros(length(mats)*length(arcs)),
+                               :lead => Int[],#zeros(Int, length(mats)*length(arcs)),
+                               :unfulfilled => Float64[],#zeros(length(mats)*length(arcs)),
+                               :reallocated => Any[])#Any[missing for i in 1:length(mats)*length(arcs)])
     shipments = DataFrame(:arc => [],
                           :material => [],
                           :amount => Float64[],
@@ -122,16 +124,16 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                            :material => [],
                            :amount => Float64[],
                            :lead => Int[])
-    demand = DataFrame(:period => zeros(Int, length(mats)*length(mrkts)),
-                       :node => repeat(mrkts, inner = length(mats)),
-                       :material => repeat(mats, outer = length(mrkts)),
-                       :demand => zeros(length(mats)*length(mrkts)),
-                       :sale => zeros(length(mats)*length(mrkts)),
-                       :unfulfilled => zeros(length(mats)*length(mrkts)),
-                       :backlog => zeros(length(mats)*length(mrkts)))
-    profit = DataFrame(:period => zeros(Int, length(nodes)),
-                       :value => zeros(length(nodes)),
-                       :node => nodes)
+    demand = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(mrkts)),
+                       :node => Int[],#repeat(mrkts, inner = length(mats)),
+                       :material => Any[],#repeat(mats, outer = length(mrkts)),
+                       :demand => Float64[],#zeros(length(mats)*length(mrkts)),
+                       :sale => Float64[],#zeros(length(mats)*length(mrkts)),
+                       :unfulfilled => Float64[],#zeros(length(mats)*length(mrkts)),
+                       :backlog => Float64[])#zeros(length(mats)*length(mrkts)))
+    profit = DataFrame(:period => Int[],#zeros(Int, length(nodes)),
+                       :value => Float64[],#zeros(length(nodes)),
+                       :node => Int[])#nodes)
     reward = 0
     period = 0
     num_periods = num_periods

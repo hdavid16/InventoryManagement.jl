@@ -1,4 +1,4 @@
-using LightGraphs, MetaGraphs, DataFrames, Distributions
+using LightGraphs, MetaGraphs, Distributions
 using InventoryManagement, StatsPlots, Random
 
 #define network connectivity
@@ -40,14 +40,7 @@ r = Dict((2,:A) => 20) #lower bound on inventory
 Q = Dict((2,:A) => 80) #base stock level
 
 #run simulation with reorder policy
-for t in 1:env.num_periods
-    if mod(t,review_period) == 0
-        action = reorder_policy(env, r, Q, on, policy, :priority, review_period)
-    else
-        action = zeros(1)
-    end
-    (env)(action)
-end
+simulate_policy!(env, r, Q, on, policy, :priority, review_period)
 
 #make plots
 #unfulfilled
