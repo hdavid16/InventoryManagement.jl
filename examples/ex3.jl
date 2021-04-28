@@ -101,6 +101,7 @@ set_props!(net, 7, rx)
 still = deepcopy(param)
 # still[:initial_inventory][:E] = 100
 still[:inventory_capacity][:E] = 100
+still[:inventory_capacity][:AB] = 200*0.1
 still[:production_time][:P2] = 2
 still[:production_capacity][:P2] = 200*0.9
 still[:production_capacity][:AB] = 200*0.1
@@ -158,7 +159,7 @@ param = Dict(:initial_inventory => Dict(m => 0. for m in materials),
              :inventory_capacity => Dict(m => 0. for m in materials),
              :holding_cost => Dict(m => 0 for m in materials),
              :demand_distribution => Dict{Symbol,Any}(m => [0] for m in materials),
-             :demand_frequency => Dict(m => 1/7 for m in materials), #demand occurs once/week on average
+             :demand_frequency => Dict(m => 1/24 for m in materials), #demand occurs once every 24 hours on average
              :sales_price => Dict(m => 0 for m in materials),
              :demand_penalty => Dict(m => 0 for m in materials),
              :supplier_priority => Dict(m => [] for m in materials))
@@ -233,6 +234,9 @@ Random.seed!(env) #set random seed
 #define reorder policy parameters
 policy = :sS #(s, S) policy
 on = :position #monitor inventory position
+#run simulation with reorder policy (set policy levels dynamically for the tanks)
+#production sequence: rx1 -> rx2 -> rx3 -> sep ; heat whenever needed to bring HotA tank to max capacity
+cycle_time = 7
 #initialize
 s = Dict((n,m) => -1. for n in vertices(net), m in materials) #default is no trigger
 S = Dict((n,m) => 0. for n in vertices(net), m in materials) #default is no reorder
@@ -243,16 +247,26 @@ for p in [:HotA,:B,:C,:AB,:BC]
     s[5,p], S[5,p] = max_inv_rx1, max_inv_rx1 #maintain full levels to have reactor ready for reaction when needed
     s[7,p], S[7,p] = max_inv_rx2, max_inv_rx2 #maintain full levels to have reactor ready for reaction when needed
 end
-#Still
-max_E_tnk = get_prop(net, 10, :inventory_capacity)[:E]
-s[10,:E], S[10,:E] = max_E_tnk, max_E_tnk #maintain full levels to have reactor ready for reaction when needed
-#Markets
-for (p, n) in zip([:P1,:P2],[6,11])
-    s[(n,p)] = 60 #trigger at 5x mean demand
-    S[(n,p)] = 60 #keep levels at 5x mean demand
-end
-#run simulation with reorder policy (set policy levels dynamically for the tanks)
 for t in 1:env.num_periods
+    #Still (trigger reaction 3)
+    if t in 3:cycle_time:env.num_periods
+        max_E_tnk = get_prop(net, 10, :inventory_capacity)[:E]
+        s[10,:E], S[10,:E] = max_E_tnk, max_E_tnk #maintain full levels to have reactor ready for reaction when needed
+    else
+        s[10,:E], S[10,:E] = -1, 0
+    end
+    #Market P1 (trigger reaction 2)
+    if t in 3:cycle_time:env.num_periods
+        s[(6,:P1)], S[(6,:P1)] = 60, 60 #trigger at and set level to 5x mean demand
+    else
+        s[(6,:P1)], S[(6,:P1)] = -1, 0
+    end
+    #Market P2 (trigger separation)
+    if t in 6:cycle_time:env.num_periods
+        s[(11,:P2)], S[(11,:P2)] = 60, 60 #trigger at and set level to 5x mean demand
+    else
+        s[(11,:P2)], S[(11,:P2)] = -1, 0
+    end
     #Tanks
     for (p, n) in zip([:HotA,:AB,:BC],[2,8,9])
         max_inv_tnk = get_prop(net, n, :inventory_capacity)[p]
@@ -260,14 +274,22 @@ for t in 1:env.num_periods
         inv_rx2 = filter(i -> i.period == env.period && i.material == p && i.node == 7, env.inv_position).level[1]
         inv_sep = filter(i -> i.period == env.period && i.material == p && i.node == 10, env.inv_position).level[1]
         max_tnk = max_inv_tnk - inv_rx1 - inv_rx2 - inv_sep #level at tank cannot exceed this value
-        if n == 2
+        if n == 2 #trigger heating
             s[n,p], S[n,p] = max_tnk, max_tnk #keep level of HotA full
-        else
+        elseif n == 8 #trigger filling tank AB
             max_inv_rx1 = get_prop(net, 5, :inventory_capacity)[p]
             max_inv_rx2 = get_prop(net, 7, :inventory_capacity)[p]
-            max_inv_sep = get_prop(net, 10, :inventory_capacity)[p]
-            levl = min(max_tnk, max_inv_rx1 + max_inv_rx2 + max_inv_sep) #keep enough to feed all units (limit by max_tnk)
+            levl = min(max_tnk, max_inv_rx1 + max_inv_rx2) #keep enough to feed all units (limit by max_tnk)
             s[n,p], S[n,p] = levl, levl #set levels
+        elseif n == 9 #trigger filling tank BC (trigger reaction 1)
+            if t in 1:cycle_time:env.num_periods
+                max_inv_rx1 = get_prop(net, 5, :inventory_capacity)[p]
+                max_inv_rx2 = get_prop(net, 7, :inventory_capacity)[p]
+                levl = min(max_tnk, max_inv_rx1 + max_inv_rx2) #keep enough to feed all units (limit by max_tnk)
+                s[n,p], S[n,p] = levl, levl #set levels
+            else
+                s[n,p], S[n,p] = -1, 0
+            end
         end
     end
     #set action
