@@ -63,6 +63,7 @@ heat = deepcopy(param)
 heat[:initial_inventory][:A] = Inf
 heat[:inventory_capacity][:A] = Inf
 heat[:production_capacity][:HotA] = 100
+heat[:production_time][:HotA] = 1
 delete!(heat, :supplier_priority)
 set_props!(net, 1, heat)
 #Reactors (don't hold any inventory)
@@ -73,9 +74,12 @@ rx[:inventory_capacity][:AB] = 80*0.8
 rx[:inventory_capacity][:B] = 80*0.5
 rx[:inventory_capacity][:C] = 80*0.5
 rx[:production_capacity][:BC] = 80
+rx[:production_time][:BC] = 2
 rx[:production_capacity][:E] = 80
+rx[:production_time][:E] = 1
 rx[:production_capacity][:AB] = 80*0.4
 rx[:production_capacity][:P1] = 80*0.6
+rx[:production_time][:P1] = 2
 suppliers_rx = inneighbors(net, 5)
 rx[:supplier_priority][:HotA] = [2]
 rx[:supplier_priority][:B] = [3]
@@ -97,7 +101,7 @@ set_props!(net, 7, rx)
 still = deepcopy(param)
 # still[:initial_inventory][:E] = 100
 still[:inventory_capacity][:E] = 100
-still[:production_time][:P2] = 1
+still[:production_time][:P2] = 2
 still[:production_capacity][:P2] = 200*0.9
 still[:production_capacity][:AB] = 200*0.1
 suppliers_still = inneighbors(net, 10)
@@ -183,40 +187,43 @@ set_props!(net, 11, p2)
 param = Dict(:sales_price => Dict(m => 0 for m in materials),
              :transportation_cost => Dict(m => 0 for m in materials),
              :lead_time => [0])
-#Heater -> HotA
-h_ha = deepcopy(param)
-h_ha[:lead_time] = [1]
-set_props!(net, 1, 2, h_ha)
-#Reactor (1&2) -> P1
-r_p1 = deepcopy(param)
-r_p1[:lead_time] = [2]
-set_props!(net, 5, 6, r_p1)
-set_props!(net, 7, 6, r_p1)
-#Reactor (1&2) -> AB
-r_ab = deepcopy(param)
-r_ab[:lead_time] = [2]
-set_props!(net, 5, 8, r_ab)
-set_props!(net, 7, 8, r_ab)
-#Reactor (1&2) -> BC
-r_bc = deepcopy(param)
-r_bc[:lead_time] = [2]
-set_props!(net, 5, 9, r_bc)
-set_props!(net, 7, 9, r_bc)
-#Reactor (1&2) -> Still (E)
-r_e = deepcopy(param)
-r_e[:lead_time] = [1]
-set_props!(net, 5, 10, r_e)
-set_props!(net, 7, 10, r_e)
-#Still -> AB
-s_ab = deepcopy(param)
-s_ab[:lead_time] = [1]
-set_props!(net, 10, 8, s_ab)
-#save param to all other links
 for e in edges(net)
-    if !(e in keys(net.eprops))
-        set_props!(net, e, param)
-    end
+    set_props!(net, e, param)
 end
+# #Heater -> HotA
+# h_ha = deepcopy(param)
+# h_ha[:lead_time] = [1]
+# set_props!(net, 1, 2, h_ha)
+# #Reactor (1&2) -> P1
+# r_p1 = deepcopy(param)
+# r_p1[:lead_time] = [2]
+# set_props!(net, 5, 6, r_p1)
+# set_props!(net, 7, 6, r_p1)
+# #Reactor (1&2) -> AB
+# r_ab = deepcopy(param)
+# r_ab[:lead_time] = [2]
+# set_props!(net, 5, 8, r_ab)
+# set_props!(net, 7, 8, r_ab)
+# #Reactor (1&2) -> BC
+# r_bc = deepcopy(param)
+# r_bc[:lead_time] = [2]
+# set_props!(net, 5, 9, r_bc)
+# set_props!(net, 7, 9, r_bc)
+# #Reactor (1&2) -> Still (E)
+# r_e = deepcopy(param)
+# r_e[:lead_time] = [1]
+# set_props!(net, 5, 10, r_e)
+# set_props!(net, 7, 10, r_e)
+# #Still -> AB
+# s_ab = deepcopy(param)
+# s_ab[:lead_time] = [1]
+# set_props!(net, 10, 8, s_ab)
+# #save param to all other links
+# for e in edges(net)
+#     if !(e in keys(net.eprops))
+#         set_props!(net, e, param)
+#     end
+# end
 
 #create environment
 num_periods = 100
@@ -291,5 +298,5 @@ sales_grouped = groupby(sales, :material)
 sales = transform(sales_grouped, :sale => cumsum)
 
 fig3 = @df sales plot(:period, :sale_cumsum, group={CumSales = :material}, linetype=:steppost, legend = :topleft,
-                        xlabel="period", ylabel="amount (units)")
+                        xlabel="period", ylabel="amount")
 @df sales plot!(:period, :backlog, group={Backlog = :material}, linetype=:steppost)

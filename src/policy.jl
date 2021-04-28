@@ -47,7 +47,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                 reorder = max(param2[n,p] - state, 0)
             end
         else
-            reorder = 0
+            continue
         end
         #assign reorder quantities
         if supplier_selection == :random
