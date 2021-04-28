@@ -249,7 +249,7 @@ for p in [:HotA,:B,:C,:AB,:BC]
 end
 for t in 1:env.num_periods
     #Still (trigger reaction 3)
-    if t in 3:cycle_time:env.num_periods
+    if t in 5:cycle_time:env.num_periods
         max_E_tnk = get_prop(net, 10, :inventory_capacity)[:E]
         s[10,:E], S[10,:E] = max_E_tnk, max_E_tnk #maintain full levels to have reactor ready for reaction when needed
     else
