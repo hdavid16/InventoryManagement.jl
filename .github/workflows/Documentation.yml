@@ -1,0 +1,2 @@
+- name: Deploy package documentation
+  uses: julia-actions/julia-docdeploy@v1.1.0
