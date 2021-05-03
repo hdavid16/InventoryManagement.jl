@@ -9,7 +9,8 @@ makedocs(
                 "Sequence of Events" => "events.md",
                 "Inventory Policies" => "policies.md",
                 "Simulation Model" => "model.md",
-                "Examples" => "examples.md"
+                "Examples" => "examples.md",
+                "API" => "api.md"
                ])
 deploydocs(;
     repo="github.com/hdavid16/InventoryManagement.jl",

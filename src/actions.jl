@@ -1,18 +1,4 @@
 """
-    show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
-
-Visualize a replenishment order vector as a DataFrame indicating how much of
-which material is being requested on each arc.
-"""
-function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
-    mats = env.materials
-    arcs = [(e.src, e.dst) for e in edges(env.network)]
-    act = reshape(action, (length(mats), length(arcs)))
-    df = DataFrame(:material => mats,
-                   [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
-end
-
-"""
     (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
 
 Apply an `action` (replenishment requests) on the `SupplyChainEnv` and step
