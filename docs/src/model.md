@@ -1,8 +1,5 @@
 # Model
 
-```@contents
-```
-
 ## Model Assumptions
 
 The following assumptions hold in the current implementation, but can be modified in future releases.
