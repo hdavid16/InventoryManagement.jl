@@ -5,7 +5,11 @@ makedocs(
          sitename = "InventoryManagement.jl",
          modules  = [InventoryManagement],
          pages=[
-                "Home" => "index.md"
+                "Home" => "index.md",
+                "Sequence of Events" => "events.md",
+                "Inventory Policies" => "policies.md",
+                "Simulation Model" => "model.md",
+                "Examples" => "examples.md"
                ])
 deploydocs(;
     repo="github.com/hdavid16/InventoryManagement.jl",

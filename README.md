@@ -207,7 +207,7 @@ This example is for a 100 period simulation of a supply network with one warehou
 
 This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub), which can be modeled as the following supply network:
 
-![](examples/figs/ex3_schematic.png)
+![](examples/figs/ex3_schematic_drawio.png)
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex3.jl).*
 
