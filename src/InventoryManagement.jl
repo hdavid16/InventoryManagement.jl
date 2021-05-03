@@ -2,7 +2,8 @@ module InventoryManagement
 
 using DataFrames
 using LightGraphs, MetaGraphs
-using Distributions, IntervalSets, Random
+using Distributions, Random
+using IntervalSets
 
 include("environment.jl")
 include("utils.jl")
