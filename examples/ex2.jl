@@ -1,5 +1,5 @@
 using LightGraphs, MetaGraphs, Distributions
-using InventoryManagement, StatsPlots, Random
+using InventoryManagement
 
 #define network connectivity
 net = MetaDiGraph(path_digraph(2)) # 1 -> 2
@@ -30,7 +30,6 @@ set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
 #create environment
 num_periods = 100
 env = SupplyChainEnv(net, num_periods)
-Random.seed!(env) #set random seed
 
 #define reorder policy parameters
 policy = :rQ #(s, S) policy
@@ -43,6 +42,7 @@ Q = Dict((2,:A) => 80) #base stock level
 simulate_policy!(env, r, Q, on, policy, :priority, review_period)
 
 #make plots
+using StatsPlots
 #unfulfilled
 fig1 = plot(env.demand.period, env.demand.backlog, linetype=:steppost, lab="backlog",
                     xlabel="period", ylabel="level", title="Node 2, Material A")

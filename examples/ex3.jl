@@ -1,5 +1,5 @@
 using LightGraphs, MetaGraphs, Distributions
-using InventoryManagement, StatsPlots, Random
+using InventoryManagement
 
 #define network connectivity
 net = MetaDiGraph(11)
@@ -191,45 +191,10 @@ param = Dict(:sales_price => Dict(m => 0 for m in materials),
 for e in edges(net)
     set_props!(net, e, param)
 end
-# #Heater -> HotA
-# h_ha = deepcopy(param)
-# h_ha[:lead_time] = [1]
-# set_props!(net, 1, 2, h_ha)
-# #Reactor (1&2) -> P1
-# r_p1 = deepcopy(param)
-# r_p1[:lead_time] = [2]
-# set_props!(net, 5, 6, r_p1)
-# set_props!(net, 7, 6, r_p1)
-# #Reactor (1&2) -> AB
-# r_ab = deepcopy(param)
-# r_ab[:lead_time] = [2]
-# set_props!(net, 5, 8, r_ab)
-# set_props!(net, 7, 8, r_ab)
-# #Reactor (1&2) -> BC
-# r_bc = deepcopy(param)
-# r_bc[:lead_time] = [2]
-# set_props!(net, 5, 9, r_bc)
-# set_props!(net, 7, 9, r_bc)
-# #Reactor (1&2) -> Still (E)
-# r_e = deepcopy(param)
-# r_e[:lead_time] = [1]
-# set_props!(net, 5, 10, r_e)
-# set_props!(net, 7, 10, r_e)
-# #Still -> AB
-# s_ab = deepcopy(param)
-# s_ab[:lead_time] = [1]
-# set_props!(net, 10, 8, s_ab)
-# #save param to all other links
-# for e in edges(net)
-#     if !(e in keys(net.eprops))
-#         set_props!(net, e, param)
-#     end
-# end
 
 #create environment
 num_periods = 100
 env = SupplyChainEnv(net, num_periods)
-Random.seed!(env) #set random seed
 
 #define reorder policy parameters
 policy = :sS #(s, S) policy
@@ -299,7 +264,7 @@ for t in 1:env.num_periods
 end
 
 #make plots
-using DataFrames
+using DataFrames, StatsPlots
 #intermediate tanks
 on_hand = filter(i -> i.level < Inf && i.material in [:AB, :BC, :E, :HotA], env.inv_on_hand)
 on_hand_gb = groupby(on_hand, [:material, :period])

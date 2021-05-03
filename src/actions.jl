@@ -1,3 +1,9 @@
+"""
+    show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
+
+Visualize a replenishment order vector as a DataFrame indicating how much of
+which material is being requested on each arc.
+"""
 function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
     mats = env.materials
     arcs = [(e.src, e.dst) for e in edges(env.network)]
@@ -6,6 +12,12 @@ function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
                    [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
 end
 
+"""
+    (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
+
+Apply an `action` (replenishment requests) on the `SupplyChainEnv` and step
+forward one simulation period.
+"""
 function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #validate action input
     @assert all(action .>= 0) "Reorder actions cannot be negative."
@@ -30,24 +42,56 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #move active production forward one period
     x.production.lead .-= 1
 
-    #sample lead times
-    leads = Dict(a => rand(get_prop(x.network, a, :lead_time)) for a in edges(x.network)) #sample lead time distribution
-
     #reshape action
-    mats = x.materials
     arcs = [(e.src, e.dst) for e in edges(x.network)]
-    act = reshape(action, (length(mats), length(arcs)))
+    act = reshape(action, (length(x.materials), length(arcs)))
 
-    #get bom
+    #place requests
+    place_requests!(x, act, arcs)
+
+    #update production and associated pipeline inventories
+    update_production!(x)
+
+    #update on hand and pipeline inventories due to arrived shipments
+    arrivals = update_shipments!(x)
+
+    #discard any excess inventory
+    enforce_inventory_limits!(x)
+
+    #update inventory positions for non-market nodes
+    for n in union(x.producers, x.distributors), p in x.materials
+        update_position!(x, n, p)
+    end
+
+    #markets open and demand occurs
+    simulate_markets!(x)
+
+    #calculate profit at each node
+    calculate_profit!(x, arrivals)
+
+    #update reward (current profit). Should be revised for RL
+    x.reward = sum(filter(j -> j.period == x.period, x.profit).value)
+end
+
+"""
+    place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
+
+Place inventory replenishment requests throughout the network.
+"""
+function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
+
+    #extract info
+    mats = x.materials
     bom = x.bill_of_materials
 
     #store original production capacities (to account for commited capacity and commited inventory in next section)
     capacities = deepcopy(Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers))
 
-    #place requests
+    #sample lead times
+    leads = Dict(a => rand(get_prop(x.network, a, :lead_time)) for a in edges(x.network))
+
     nonsources = [n for n in vertices(x.network) if !isempty(inneighbors(x.network, n))]
-    for i in 1:length(mats) #loop by materials
-        p = mats[i] #material requested
+    for (i,p) in enumerate(mats) #loop by materials
         for n in nonsources #loop by nodes placing requests
             sup_priority = get_prop(x.network, n, :supplier_priority)[p] #get supplier priority list
             for sup in sup_priority #loop by supplier priority
@@ -193,8 +237,21 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     for n in x.producers
         set_prop!(x.network, n, :production_capacity, capacities[n])
     end
+end
 
-    #update production and associated pipeline inventories
+"""
+    update_production!(x::SupplyChainEnv)
+
+Update completed production at each producer node and send to the arc that it
+    was commited to.
+"""
+function update_production!(x::SupplyChainEnv)
+
+    #extract info
+    mats = x.materials
+    bom = x.bill_of_materials
+
+    #find production that has completed
     produced = filter(i -> iszero(i.lead) && !iszero(i.amount), x.production) #find active production that has completed
     for i in 1:nrow(produced) #add produced material to pipeline
         a, p, amount = produced[i, [:arc, :material, :amount]]
@@ -212,15 +269,21 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
             x.inv_pipeline[(x.inv_pipeline.period .== x.period) .&
                            (string.(x.inv_pipeline.arc) .== string(a)) .&
                            (x.inv_pipeline.material .== p), :level] .+= amount
-        else #send produced material to storage that node
+        else #send produced material to storage at that node
             x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
                           (x.inv_on_hand.node .== a[1]) .&
                           (x.inv_on_hand.material .== p), :level] .+= amount
         end
     end
     filter!(i -> i.lead > 0 && i.amount > 0, x.production) #remove produced inventory that was shipped (and any zero values)
+end
 
-    #update on hand and pipeline inventories due to arrived shipments
+"""
+    update_shipments!(x::SupplyChainEnv)
+
+Update inventories throughout the network for arrived shipments.
+"""
+function update_shipments!(x::SupplyChainEnv)
     arrivals = filter(i -> iszero(i.lead) && !iszero(i.amount), x.shipments) #find active shipments with 0 lead time
     for i in 1:nrow(arrivals)
         a, p, amount = arrivals[i, [:arc, :material, :amount]]
@@ -232,9 +295,16 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                        (x.inv_pipeline.material .== p), :level] .-= amount
     end
     filter!(i -> i.lead > 0 && i.amount > 0, x.shipments) #remove shipments that arrived (and any zero values)
+    return arrivals
+end
 
-    #discard any excess inventory
-    for n in vertices(x.network), p in mats
+"""
+    enforce_inventory_limits!(x::SupplyChainEnv)
+
+Discard any excess inventory (exceeding the inventory capacity at each node).
+"""
+function enforce_inventory_limits!(x::SupplyChainEnv)
+    for n in vertices(x.network), p in x.materials
         max_inv = get_prop(x.network, n, :inventory_capacity)[p]
         onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
         if onhand > max_inv
@@ -247,16 +317,26 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                           (x.inv_on_hand.material .== p), :discarded] .+= onhand - max_inv
         end
     end
+end
 
-    #update inventory positions for non-market nodes
-    for n in union(x.producers, x.distributors), p in x.materials #update distribution centers (not plants, not end distributors [markets])
-        making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
-        upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level) #in-transit inventory
-        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
-        push!(x.inv_position, [x.period, n, p, onhand + making + upstream]) #update inventory
-    end
+"""
+    update_positions!(x::SupplyChainEnv, n::Int, p::Any, backlog::Float64 = 0.)
 
-    #markets open and demand occurs
+Update inventory positions for material `p` at node `n`.
+"""
+function update_position!(x::SupplyChainEnv, n::Int, p::Any, backlog::Float64 = 0.)
+    making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
+    upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level) #in-transit inventory
+    onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
+    push!(x.inv_position, [x.period, n, p, onhand + making + upstream - backlog]) #update inventory
+end
+
+"""
+    simulate_markets!(x::SupplyChainEnv)
+
+Open markets, apply material demands, and update inventory positions.
+"""
+function simulate_markets!(x::SupplyChainEnv)
     for n in x.markets, p in x.materials
         freq = Bernoulli(get_prop(x.network, n, :demand_frequency)[p]) #demand frequency
         dmnd = get_prop(x.network, n, :demand_distribution)[p] #demand distribution
@@ -280,13 +360,17 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                       (x.inv_on_hand.material .== p), :level] .-= demand[5]
 
         #update inventory position
-        making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
-        upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level) #in-transit inventory
-        onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on-hand inventory
-        push!(x.inv_position, [x.period, n, p, onhand + making + upstream - demand[7]]) #update inventory (include backlog)
+        update_position!(x, n, p, demand[7])
     end
+end
 
-    #calculate profit at each node
+"""
+    calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
+
+Calculate profit at each node in the network
+    (sales - production cost - purchase costs - transportation costs - holding costs).
+"""
+function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     for n in vertices(x.network)
         profit = 0 #initialize node profit
         for p in x.materials
@@ -322,7 +406,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
                 intransit = filter(j -> j.period == x.period && j.arc == (pred, n) && j.material == p, x.inv_pipeline).level[1]
                 profit -= intransit * trans_cost
             end
-            #receive payment for delivered inventory and pay production costs
+            #receive payment for delivered inventory
             for succ in outneighbors(x.network, n)
                 price = get_prop(x.network, n, succ, :sales_price)[p]
                 #receive payment for delivered inventory
@@ -336,50 +420,4 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
         #discounted profit
         push!(x.profit, [x.period, 1/(1+x.discount)^x.period * profit, n])
     end
-
-    #update reward (current profit). Should be revised for RL
-    x.reward = sum(filter(j -> j.period == x.period, x.profit).value)
-end
-
-function action_space(env::SupplyChainEnv)
-    num_products = length(env.materials)
-    num_edges = ne(env.network)
-    num_actions = num_products * num_edges
-    ubound = []
-    for n in vertices(env.network)
-        set_prop!(env.network, n, :max_order, Dict(p => 0. for p in env.materials))
-    end
-    srcs = [n for n in nodes if isempty(inneighbors(network, n))]
-    for (source, sink) in Iterators.material(srcs, env.markets)
-        paths = yen_k_shortest_paths(env.network, source, sink, weights(env.network), typemax(Int)).paths
-        #NOTE: TODO revise logic here if producers can be intermediate nodes!!!
-        for path in paths
-            capacity = get_prop(env.network, path[1], :production_capacity)
-            for i in 2:length(path)
-                top_max_order = get_prop(env.network, path[i-1], :max_order)
-                if i > 2
-                    top_init_inv = get_prop(env.network, path[i-1], :initial_inventory)
-                end
-                max_order = get_prop(env.network, path[i], :max_order)
-                for p in env.materials
-                    if i == 2
-                        max_order[p] += capacity[p]
-                    elseif i == 3
-                        max_order[p] += top_init_inv[p] + top_max_order[p] * env.num_periods
-                    else
-                        max_order[p] += top_init_inv[p] + top_max_order[p]
-                    end
-                end
-                set_prop!(env.network, path[i], :max_order, max_order)
-            end
-        end
-    end
-    for e in edges(env.network)
-        max_order = get_prop(env.network, e.dst, :max_order)
-        for p in env.materials
-            push!(ubound, max_order[p])
-        end
-    end
-
-    ClosedInterval.(zeros(num_actions), ubound)
 end

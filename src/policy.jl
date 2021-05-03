@@ -1,3 +1,11 @@
+"""
+    reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
+                level::Symbol = :position, kind::Symbol = :rQ,
+                supplier_selection::Symbol = :priority, review_period::Int = 1)
+
+Apply an inventory policy to specify the replinishment orders for each material
+    throughout the `SupplyChainEnv`.
+"""
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                 level::Symbol = :position, kind::Symbol = :rQ,
                 supplier_selection::Symbol = :priority, review_period::Int = 1)
@@ -24,6 +32,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     #initialize action matrix
     action = zeros(length(mats), length(arcs))
     for n in nodes, (k, p) in enumerate(mats)
+        param1[n,p] < 0 && continue #if trigger level is negative, skip it
         trigger = false #trigger an inventory replenishment order
         reorder = 0
         #check if reorder is triggered
@@ -75,6 +84,12 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     return collect(Iterators.flatten(action))
 end
 
+"""
+    simulate_policy!(env::SupplyChainEnv, args...)
+
+Step through a simulation using a specified reorder policy. `args` are the
+arguments that are passed to the `reorder_policy` function.
+"""
 function simulate_policy!(env::SupplyChainEnv, args...)
     for t in 1:env.num_periods
         action = reorder_policy(env, args...)

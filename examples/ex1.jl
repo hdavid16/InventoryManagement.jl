@@ -1,5 +1,5 @@
 using LightGraphs, MetaGraphs, Distributions
-using InventoryManagement, StatsPlots, Random
+using InventoryManagement
 
 #define network connectivity
 adj_matrix = [0 0 1;
@@ -46,7 +46,6 @@ set_props!(net, 2, 3, Dict(:sales_price => Dict(:A => 1, :B => 0),
 #create environment
 num_periods = 100
 env = SupplyChainEnv(net, num_periods)
-Random.seed!(env) #set random seed
 
 #define reorder policy parameters
 policy = :sS #(s, S) policy
@@ -58,6 +57,7 @@ S = Dict((3,:A) => 100, (3,:B) => 0) #base stock level
 simulate_policy!(env, s, S, on, policy, :priority)
 
 #make plots
+using DataFrames, StatsPlots
 #profit
 node_profit = groupby(env.profit, :node)
 profit = transform(node_profit, :value => cumsum)
