@@ -2,7 +2,7 @@
 
 *Discrete-time simulation environment for Inventory Management in Supply Networks.*
 
-![](../../logo.png)
+![](assets/logo.png)
 
 ## Overview
 
