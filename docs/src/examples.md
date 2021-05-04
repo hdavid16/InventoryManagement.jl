@@ -6,8 +6,8 @@ This example is for a 100 period simulation of a supply network with one plant (
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl).*
 
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex1_profit.png)
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex1_position.png)
+![](assets/ex1_profit.png)
+![](assets/ex1_position.png)
 
 ## Example 2
 
@@ -15,16 +15,16 @@ This example is for a 100 period simulation of a supply network with one warehou
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
 
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex2_inventory.png)
+![](assets/ex2_inventory.png)
 
 ## Example 3
 
 This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub), which can be modeled as the following supply network:
 
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex3_schematic_drawio.png)
+![](assets/ex3_schematic_drawio.png)
 
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex3.jl).*
 
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex3_intermediate_tanks.png)
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex3_product_tanks.png)
-![](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/figs/ex3_sales.png)
+![](assets/ex3_intermediate_tanks.png)
+![](assets/ex3_product_tanks.png)
+![](assets/ex3_sales.png)
