@@ -101,7 +101,7 @@ At each iteration in the simulation, an `action` can be provided to the system, 
 
 An `action` vector can be visualized as a `DataFrame` using `show_action(action, env::SupplyChainEnv)`.
 
-The function `reorder_policy` can be used to implement an inventory reorder policy. The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
+The function `reorder_policy` can be used to implement an inventory reorder policy at each node based its inventory position. The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
 
 The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `env::SupplyChainEnv`: inventory management environment
