@@ -74,7 +74,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     mats = get_prop(network, :materials)
     bom = get_prop(network, :bill_of_materials)
     #check inputs
-    check_inputs(network, nodes, arcs, mrkts, plants, mats, bom)
+    check_inputs(network, nodes, arcs, mrkts, plants, mats, bom, num_periods)
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
     for n in nodes, p in mats
