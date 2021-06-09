@@ -1,14 +1,14 @@
 """
     reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                level::Symbol = :position, kind::Symbol = :rQ,
-                supplier_selection::Symbol = :priority, review_period::Int = 1)
+                        kind::Symbol = :rQ, review_period::Int = 1,
+                        supplier_selection::Symbol = :priority)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
 """
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                level::Symbol = :position, kind::Symbol = :rQ,
-                supplier_selection::Symbol = :priority, review_period::Int = 1)
+                        kind::Symbol = :rQ, review_period::Int = 1,
+                        supplier_selection::Symbol = :priority)
 
     #read parameters
     t = env.period
@@ -18,7 +18,6 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
 
     #check inputs
     @assert kind in [:rQ, :sS] "The policy kind must be either `:rQ` or `:sS`."
-    @assert level in [:position, :on_hand] "The policy monitoring level must be either `:position` or `:on_hand`."
     for n in nodes, p in mats, param in [param1, param2] #if no policy given for a node/material, set the params to -1 so that a reorder is never triggered
         if !in((n,p), keys(param))
             param[(n,p)] = -1
@@ -34,23 +33,10 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     action = zeros(length(mats), length(arcs))
     for n in nodes, (k, p) in enumerate(mats)
         param1[n,p] < 0 && continue #if trigger level is negative, skip it
-        trigger = false #trigger an inventory replenishment order
         reorder = 0
-        #check if reorder is triggered
-        if level == :on_hand
-            state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_on_hand).level[1]
-            if t-review_period <= 0
-                trigger = param1[n,p] >= state #trigger if initial inventory is below trigger point
-            else
-                state0 = filter(i -> i.period == t-review_period && i.node == n && i.material == p, env.inv_on_hand).level[1]
-                trigger = state0 > param1[n,p] >= state #only reorder first time going past the threshold
-            end
-        elseif level == :position
-            state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_position).level[1]
-            trigger = param1[n,p] >= state
-        end
-        #set reorder policy
-        if trigger
+        #check if reorder is triggered & set reorder policy
+        state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_position).level[1]
+        if state <= param1[n,p]
             if kind == :rQ #rQ policy
                 reorder = param2[n,p]
             elseif kind == :sS #sS policy
