@@ -8,8 +8,8 @@ function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
     mats = env.materials
     arcs = [(e.src, e.dst) for e in edges(env.network)]
     act = reshape(action, (length(mats), length(arcs)))
-    df = DataFrame(:material => mats,
-                   [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
+    return DataFrame(:material => mats, 
+                     [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
 end
 
 """
@@ -32,14 +32,23 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     for n in nodes, key in all_keys
         @assert key in keys(network.vprops[n]) "$key not stored in distributor node $n."
         for p in mats
-            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
+            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
+                network.vprops[n][key][p] = 0.
+            end
             @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
         end
     end
     for n in mrkts, key in market_keys
         @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
         for p in mats
-            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
+            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
+                if key == :demand_distribution
+                    tmp = Dict(p => [0])
+                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
+                else
+                    network.vprops[n][key][p] = 0.
+                end
+            end
             if key == :demand_frequency
                 @assert 0 <= network.vprops[n][key][p] <= 1 "Parameter $key for material $p on node $n must be between 0 and 1."
             elseif key == :demand_distribution
@@ -52,7 +61,9 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     for n in plants, key in plant_keys
         @assert key in keys(network.vprops[n]) "$key not stored in producer node $n."
         for p in mats
-            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
+            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
+                network.vprops[n][key][p] = 0.
+            end
             @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
         end
     end
@@ -60,7 +71,9 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         @assert key in keys(network.eprops[Edge(a...)]) "$key not stored in arc $a."
         if key != :lead_time
             for p in mats
-                @assert p in keys(network.eprops[Edge(a...)][key]) "Material $p not found in $key on arc $a."
+                if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
+                    network.eprops[Edge(a...)][key][p] = 0.
+                end
                 @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
             end
         else
@@ -70,7 +83,9 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
     for n in nonsources, p in mats
         key = :supplier_priority
-        @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
+        if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and add the node's predecessors
+            network.vprops[n][key][p] = inneighbors(network, n)
+        end
         for s in network.vprops[n][key][p]
             @assert s in inneighbors(network, n) "Supplier $s is not a supplier to node $n, but is listed in the supplier priority for that node for material $p."
         end
