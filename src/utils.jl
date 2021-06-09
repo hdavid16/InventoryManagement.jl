@@ -14,19 +14,21 @@ end
 
 """
     check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
-                    mrkts::Vector, plants::Vector, mats::Vector, bom::Array)
+                    mrkts::Vector, plants::Vector, mats::Vector, bom::Array,
+                    num_periods::Int)
 
 Check inputs when creating a `SupplyChainEnv`.
 """
 function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
-                    mrkts::Vector, plants::Vector, mats::Vector, bom::Array)
+                    mrkts::Vector, plants::Vector, mats::Vector, bom::Array,
+                    num_periods::Int)
     if bom != [0] #if [0] then single product, no bom
         @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
         @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
     end
     @assert size(bom)[1] == length(mats) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
+    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :demand_sequence]
     plant_keys = [:production_cost, :production_time, :production_capacity]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in nodes, key in all_keys
@@ -45,6 +47,8 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                 if key == :demand_distribution
                     tmp = Dict(p => [0])
                     network.vprops[n][key] = merge(network.vprops[n][key], tmp)
+                elseif key == :demand_sequence
+                    network.vprops[n][key][p] = zeros(num_periods)
                 else
                     network.vprops[n][key][p] = 0.
                 end
@@ -53,6 +57,8 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                 @assert 0 <= network.vprops[n][key][p] <= 1 "Parameter $key for material $p on node $n must be between 0 and 1."
             elseif key == :demand_distribution
                 @assert rand(network.vprops[n][key][p]) isa Number "Parameter $key for material $p on node $n must be a sampleable distribution or an array."
+            elseif key == :demand_sequence
+                @assert length(network.vprops[n][key][p]) == num_periods "The demand sequence for material $p at node $n must be a vector with $num_periods entries."
             else
                 @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
             end
