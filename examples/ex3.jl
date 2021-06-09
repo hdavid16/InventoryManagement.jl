@@ -198,7 +198,6 @@ env = SupplyChainEnv(net, num_periods)
 
 #define reorder policy parameters
 policy = :sS #(s, S) policy
-on = :position #monitor inventory position
 #run simulation with reorder policy (set policy levels dynamically for the tanks)
 #production sequence: rx1 -> rx2 -> rx3 -> sep ; heat whenever needed to bring HotA tank to max capacity
 cycle_time = 7
@@ -258,7 +257,7 @@ for t in 1:env.num_periods
         end
     end
     #set action
-    action = reorder_policy(env, s, S, on, policy, :priority)
+    action = reorder_policy(env, s, S, policy)
     #step
     (env)(action)
 end
