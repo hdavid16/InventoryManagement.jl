@@ -19,9 +19,10 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     #check inputs
     @assert kind in [:rQ, :sS] "The policy kind must be either `:rQ` or `:sS`."
     @assert level in [:position, :on_hand] "The policy monitoring level must be either `:position` or `:on_hand`."
-    for n in nodes, p in mats
-        @assert (n,p) in keys(param1) "The first policy parameter is missing a key for node $n and material $p."
-        @assert (n,p) in keys(param2) "The second policy parameter is missing a key for node $n and material $p."
+    for n in nodes, p in mats, param in [param1, param2] #if no policy given for a node/material, set the params to -1 so that a reorder is never triggered
+        if !in((n,p), keys(param))
+            param[(n,p)] = -1
+        end
     end
 
     #check review period
