@@ -41,7 +41,9 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         end
     end
     for n in mrkts, key in market_keys
-        @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
+        if !in(key, keys(network.vprops[n])) #create empty params for market nodes if not specified
+            set_prop!(network, n, key, Dict())
+        end
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
                 if key == :demand_distribution
