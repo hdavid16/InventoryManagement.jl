@@ -1,14 +1,12 @@
 """
     reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Int = 1,
-                        supplier_selection::Symbol = :priority)
+                        kind::Symbol = :rQ, review_period::Int = 1)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
 """
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Int = 1,
-                        supplier_selection::Symbol = :priority)
+                        kind::Symbol = :rQ, review_period::Int = 1)
 
     #read parameters
     t = env.period
@@ -46,25 +44,17 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
             continue
         end
         #assign reorder quantities
-        if supplier_selection == :random
-            suppliers = length(inneighbors(env.network, n))
-            for src in inneighbors(env.network, n)
-                j = findfirst(i -> i == (src, n), arcs)
-                action[k, j] = reorder / suppliers #equal split
+        supplier_priority = get_prop(env.network, n, :supplier_priority)[p]
+        for src in supplier_priority
+            if src in env.producers #find available capacity or inventory
+                avail = get_prop(env.network, src, :production_capacity)[p]
+            else
+                avail = filter(i -> i.period == env.period && i.node == src && i.material == p, env.inv_on_hand).level[1]
             end
-        elseif supplier_selection == :priority
-            supplier_priority = get_prop(env.network, n, :supplier_priority)[p]
-            for src in supplier_priority
-                if src in env.producers #find available capacity or inventory
-                    avail = get_prop(env.network, src, :production_capacity)[p]
-                else
-                    avail = filter(i -> i.period == env.period && i.node == src && i.material == p, env.inv_on_hand).level[1]
-                end
-                request = min(avail, reorder) #reorder up to the available amount
-                reorder -= request #update reorder quantity for next supplier
-                j = findfirst(i -> i == (src, n), arcs) #find index in action matrix
-                action[k, j] = request #sate request quantity
-            end
+            request = min(avail, reorder) #reorder up to the available amount
+            reorder -= request #update reorder quantity for next supplier
+            j = findfirst(i -> i == (src, n), arcs) #find index in action matrix
+            action[k, j] = request #sate request quantity
         end
     end
 

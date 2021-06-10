@@ -53,7 +53,7 @@ s = Dict((3,:A) => 50) #lower bound on inventory
 S = Dict((3,:A) => 100) #base stock level
 
 #run simulation with reorder policy
-simulate_policy!(env, s, S, policy, freq, :priority)
+simulate_policy!(env, s, S, policy, freq)
 
 #make plots
 using DataFrames, StatsPlots
