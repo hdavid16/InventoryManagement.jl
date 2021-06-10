@@ -43,7 +43,7 @@ simulate_policy!(env, r, Q, policy, freq)
 #make plots
 using StatsPlots
 #unfulfilled
-fig1 = plot(env.demand.period, env.demand.backlog, linetype=:steppost, lab="backlog",
+fig1 = plot(env.demand.period, env.demand.unfulfilled, linetype=:steppost, lab="backlog",
                     xlabel="period", ylabel="level", title="Node 2, Material A")
 #add inventory position
 inv_on_hand = filter(i -> i.level < Inf, env.inv_on_hand)

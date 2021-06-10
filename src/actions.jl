@@ -80,10 +80,19 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
     for (i,p) in enumerate(mats) #loop by materials
         for n in nonsources #loop by nodes placing requests
             sup_priority = get_prop(x.network, n, :supplier_priority)[p] #get supplier priority list
-            for sup in sup_priority #loop by supplier priority
+            for (l, sup) in enumerate(sup_priority) #loop by supplier priority
                 a = (sup, n) #arc
                 j = findfirst(k -> k == a, arcs) #find index for that arc in the action matrix
                 amount = act[i,j] #amount requested
+                if x.backlog && x.period > 1 #add previous period's backlog
+                    bklog = [] #initialize backlogged quantity
+                    if x.reallocate && l == 1
+                        bklog = filter(k -> k.material == p && k.arc == (sup_priority[end],n) && k.period == x.period-1, x.replenishments).unfulfilled
+                    elseif !x.reallocate
+                        bklog = filter(k -> k.material == p && k.arc == a && k.period == x.period-1, x.replenishments).unfulfilled
+                    end
+                    amount += !isempty(bklog) ? bklog[1] : 0
+                end
                 iszero(amount) && continue #continue if request is 0
                 supply = filter(k -> k.period == x.period && k.node == a[1] && k.material == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
                 sched_supply = filter(k -> k.arc == (a[1],a[1]) && k.material == p, x.production)[:,[:amount,:lead]] #check if any inventory is scheduled for production, but not commited to downstream node
@@ -331,14 +340,13 @@ function simulate_markets!(x::SupplyChainEnv)
             dmnd = truncated(dmnd,0,Inf)
         end
         q = iszero(dmnd_seq) ? rand(freq) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
-        demand = [x.period, n, p, q, 0, 0, 0] #initialize demand vector to store in df
+        demand = [x.period, n, p, q, 0., 0.] #initialize demand vector to store in df
         inv = filter(i -> i.period == x.period && i.node == n && i.material == p, x.inv_on_hand).level[1] #current inventory at node
         if x.backlog && x.period > 1 #add previous backlog to the quantity requested at the market
-            q += filter(i -> i.period == x.period-1 && i.node == n && i.material == p, x.demand).backlog[1]
+            q += filter(i -> i.period == x.period-1 && i.node == n && i.material == p, x.demand).unfulfilled[1]
         end
         demand[5] = min(q, inv) #sales
-        demand[6] = max(q - inv, 0) #unfilfilled
-        demand[7] = x.backlog ? demand[6] : 0 #backlog
+        demand[6] = max(q - inv, 0.) #unfilfilled
         push!(x.demand, demand) #update df
 
         #update end of period inventory (subtract sales)
@@ -347,7 +355,7 @@ function simulate_markets!(x::SupplyChainEnv)
                       (x.inv_on_hand.material .== p), :level] .-= demand[5]
 
         #update inventory position
-        update_position!(x, n, p, demand[7])
+        update_position!(x, n, p, x.backlog ? demand[6] : 0)
     end
 end
 
