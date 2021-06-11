@@ -41,9 +41,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         end
     end
     for n in mrkts, key in market_keys
-        if !in(key, keys(network.vprops[n])) #create empty params for market nodes if not specified
-            set_prop!(network, n, key, Dict())
-        end
+        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
                 if key == :demand_distribution
@@ -91,6 +89,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
     for n in nonsources, p in mats
         key = :supplier_priority
+        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
         if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and add the node's predecessors
             network.vprops[n][key][p] = inneighbors(network, n)
         end

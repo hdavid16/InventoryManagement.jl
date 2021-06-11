@@ -46,11 +46,11 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         #assign reorder quantities
         supplier_priority = get_prop(env.network, n, :supplier_priority)[p]
         for src in supplier_priority
+            avail = 0 #initialize availability
             if src in env.producers #find available capacity or inventory
                 avail = get_prop(env.network, src, :production_capacity)[p]
-            else
-                avail = filter(i -> i.period == env.period && i.node == src && i.material == p, env.inv_on_hand).level[1]
             end
+            avail += filter(i -> i.period == env.period && i.node == src && i.material == p, env.inv_on_hand).level[1]
             request = min(avail, reorder) #reorder up to the available amount
             reorder -= request #update reorder quantity for next supplier
             j = findfirst(i -> i == (src, n), arcs) #find index in action matrix

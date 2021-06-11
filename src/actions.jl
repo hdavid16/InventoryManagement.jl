@@ -85,15 +85,16 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                 j = findfirst(k -> k == a, arcs) #find index for that arc in the action matrix
                 amount = act[i,j] #amount requested
                 if x.backlog && x.period > 1 #add previous period's backlog
-                    bklog = [] #initialize backlogged quantity
                     if x.reallocate && l == 1
-                        bklog = filter(k -> k.material == p && k.arc == (sup_priority[end],n) && k.period == x.period-1, x.replenishments).unfulfilled
+                        amount += filter(k -> k.material == p && k.arc == (sup_priority[end],n) && k.period == x.period-1, x.replenishments).unfulfilled[1]
                     elseif !x.reallocate
-                        bklog = filter(k -> k.material == p && k.arc == a && k.period == x.period-1, x.replenishments).unfulfilled
+                        amount += filter(k -> k.material == p && k.arc == a && k.period == x.period-1, x.replenishments).unfulfilled[1]
                     end
-                    amount += !isempty(bklog) ? bklog[1] : 0
                 end
-                iszero(amount) && continue #continue if request is 0
+                if iszero(amount) #continue to next iteration if request is 0
+                    push!(x.replenishments, [x.period, a, p, 0, 0, 0, 0])
+                    continue 
+                end
                 supply = filter(k -> k.period == x.period && k.node == a[1] && k.material == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
                 sched_supply = filter(k -> k.arc == (a[1],a[1]) && k.material == p, x.production)[:,[:amount,:lead]] #check if any inventory is scheduled for production, but not commited to downstream node
                 sort!(sched_supply, :lead) #sort to use scheduled supply that is closest to finishing
@@ -315,14 +316,22 @@ function enforce_inventory_limits!(x::SupplyChainEnv)
 end
 
 """
-    update_positions!(x::SupplyChainEnv, n::Int, p::Any, backlog::Float64 = 0.)
+    update_positions!(x::SupplyChainEnv, n::Int, p::Any)
 
 Update inventory positions for material `p` at node `n`.
 """
-function update_position!(x::SupplyChainEnv, n::Int, p::Any, backlog::Float64 = 0.)
+function update_position!(x::SupplyChainEnv, n::Int, p::Any)
     making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
     upstream = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.inv_pipeline).level) #in-transit inventory
     onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
+    backlog = 0 #initialize
+    if x.backlog
+        if n in x.markets
+            backlog += filter(i -> i.period == x.period && i.node == n && i.material == p, x.demand).unfulfilled[1]
+        else
+            backlog += sum(filter(i -> i.period == x.period && i.arc[1] == n && i.material == p, x.replenishments).unfulfilled)
+        end
+    end
     push!(x.inv_position, [x.period, n, p, onhand + making + upstream - backlog]) #update inventory
 end
 
@@ -355,7 +364,7 @@ function simulate_markets!(x::SupplyChainEnv)
                       (x.inv_on_hand.material .== p), :level] .-= demand[5]
 
         #update inventory position
-        update_position!(x, n, p, x.backlog ? demand[6] : 0)
+        update_position!(x, n, p)
     end
 end
 
