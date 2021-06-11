@@ -384,7 +384,7 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
             elseif n in x.markets
                 sales_price = get_prop(x.network, n, :sales_price)[p]
                 dmnd_penalty = get_prop(x.network, n, :demand_penalty)[p]
-                sold, unfilled = filter(j -> j.period == x.period && j.node == n && j.material == p, x.demand)[1, [:sale, :unfulfilled]]
+                sold, unfilled = filter(j -> j.period == x.period && j.node == n && j.material == p, x.demand)[1, [:sold, :unfulfilled]]
                 profit += sales_price * sold
                 profit -= dmnd_penalty * unfilled
             end

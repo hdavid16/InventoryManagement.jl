@@ -105,7 +105,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                        :node => Int[],#repeat(mrkts, inner = length(mats)),
                        :material => Any[],#repeat(mats, outer = length(mrkts)),
                        :demand => Float64[],#zeros(length(mats)*length(mrkts)),
-                       :sale => Float64[],#zeros(length(mats)*length(mrkts)),
+                       :sold => Float64[],#zeros(length(mats)*length(mrkts)),
                        :unfulfilled => Float64[])#zeros(length(mats)*length(mrkts)))
     profit = DataFrame(:period => Int[],#zeros(Int, length(nodes)),
                        :value => Float64[],#zeros(length(nodes)),

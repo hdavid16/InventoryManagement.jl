@@ -281,7 +281,7 @@ fig2 = @df inv_on_hand plot(:period, :level_sum, group=:material, linetype=:step
 sales = filter(i -> i.material == :P1 ? i.node == 6 :
                     i.material == :P2 ? i.node == 11 : false, env.demand)
 sales_grouped = groupby(sales, :material)
-sales = transform(sales_grouped, :sale => cumsum)
+sales = transform(sales_grouped, :sold => cumsum)
 
 fig3 = @df sales plot(:period, :sale_cumsum, group={CumSales = :material}, linetype=:steppost, legend = :topleft,
                         xlabel="period", ylabel="amount")
