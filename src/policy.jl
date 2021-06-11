@@ -46,7 +46,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         #assign reorder quantity
         supplier = get_prop(env.network, n, :supplier_priority)[p][1]
         j = findfirst(i -> i == (supplier, n), arcs) #find index in action matrix
-        action[k, j] = request #sate request quantity
+        action[k, j] = reorder #sate request quantity
     end
 
     return collect(Iterators.flatten(action))
