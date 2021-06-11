@@ -4,7 +4,7 @@ At each iteration in the simulation, an `action` can be provided to the system, 
 
 An `action` vector can be visualized as a `DataFrame` using `show_action(action, env::SupplyChainEnv)`.
 
-The function `reorder_policy` can be used to implement an inventory reorder policy at each node based its inventory position. Reorder quantities are placed according to the node's sourcing preferences (supplier priority). When there is insufficient production capacity or on-hand inventory at a supplier, the quantity that cannot be potentially fulfilled by the supplier is requested to the next supplier in the supplier priority list. This applies only when a node has more than one supplier. The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
+The function `reorder_policy` can be used to implement an inventory reorder policy at each node based its inventory position. Reorder quantities are placed to the node's priority supplier. The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
 
 The `reorder_policy` takes the following inputs and returns an `action` vector.
 - `env::SupplyChainEnv`: inventory management environment
