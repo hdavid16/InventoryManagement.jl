@@ -9,7 +9,7 @@ The following assumptions hold in the current implementation, but can be modifie
 - Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
 - Commited production orders count towards the inventory position of the downstream node, even if they haven't yet shipped (due to production lead time).
 - Production lead times are fixed and independent of the amount being produced.
-- Backlogging is allowed at all nodes. When `reallocation = true`, the unfulfilled quantity from the lowest priority supplier is added to the highest priority supplier request in the next period. 
+- Backlogging is allowed at all nodes. When `reallocation = true`, the unfulfilled quantity from the lowest priority supplier is added to the highest priority supplier request in the next period. *Note:* Unfulfilled requests are currently penalized at `market` nodes only. However, this can be changed in a new release by passing an unfulfilled penalty parameter in th metadata of each node.
 - Transportation costs are paid to a third party (not a node in the network).
 
 ## Model Limitations
