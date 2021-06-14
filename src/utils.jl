@@ -32,7 +32,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     plant_keys = [:production_cost, :production_time, :production_capacity]
     arc_keys = [:sales_price, :transportation_cost, :lead_time]
     for n in nodes, key in all_keys
-        @assert key in keys(network.vprops[n]) "$key not stored in distributor node $n."
+        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
                 network.vprops[n][key][p] = 0.
@@ -65,7 +65,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         end
     end
     for n in plants, key in plant_keys
-        @assert key in keys(network.vprops[n]) "$key not stored in producer node $n."
+        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
                 network.vprops[n][key][p] = 0.
@@ -74,7 +74,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         end
     end
     for a in arcs, key in arc_keys
-        @assert key in keys(network.eprops[Edge(a...)]) "$key not stored in arc $a."
+        !in(key, keys(network.eprops[Edge(a...)])) && set_prop!(network, Edge(a...), key, Dict()) #create empty params for arcs if not specified
         if key != :lead_time
             for p in mats
                 if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
