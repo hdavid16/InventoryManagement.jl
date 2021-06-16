@@ -75,15 +75,20 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     end
     for a in arcs, key in arc_keys
         !in(key, keys(network.eprops[Edge(a...)])) && set_prop!(network, Edge(a...), key, Dict()) #create empty params for arcs if not specified
-        if key != :lead_time
-            for p in mats
-                if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
+        for p in mats
+            if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
+                if key == :lead_time
+                    tmp = Dict(p => [0])
+                    network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
+                else
                     network.eprops[Edge(a...)][key][p] = 0.
                 end
+            end            
+            if key == :lead_time
+                @assert rand(network.eprops[Edge(a...)][key][p]) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
+            else
                 @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
             end
-        else
-            @assert rand(network.eprops[Edge(a...)][key]) isa Number "Parameter $key on arc $a must be a sampleable distribution or an array."
         end
     end
     nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]

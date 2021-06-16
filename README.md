@@ -91,10 +91,10 @@ The following features are not currently supported:
 - Alternate bills of materials (see [Model Inputs](#graph-specific)) for the same material are not currently supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
   - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for material `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for material `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made.
   - Make a copy of the material to specify an alternate pathway. This will require specifying parameters for the copied material throughout the network.
-- Capacity limitations on shared feedstock inventory among producer nodes (e.g., shared inventory tanks) cannot be enforced directly. This is because the shared inventory is its own node and feeds the inventory holding area in the producer node. Thus the total inventory is the inventory at the inventory node plus the inventory positions at the producers. Capacity limitations must be enforced manually via the reorder actions (see [Kondili Example](#example-3)). Potential fixes: (requires changing the package code)
+- Capacity limitations on shared feedstock inventory among producer nodes (e.g., shared inventory tanks) cannot be enforced directly. This is because the shared inventory is its own node and feeds the inventory holding area in the producer node. Thus the total inventory is the inventory at the inventory node plus the inventory positions at the producers. Capacity limitations must be enforced manually via the reorder actions. Potential fixes: (requires changing the package code)
   - Make the inventory capacity dynamic (a function of the producer inventory holding sites).
   - Split production site from feedstock inventory into two nodes. Requires updating model logic and behavior.
-- If a `producer` can produce more than 1 material, it is possible to produce all materials it is capable of producing simultaneously. This does not account for resource constraints (e.g., single reactor can only do reaction 1 or reaction 2, but not both simultaneously). However, these can be enforced manually with the reorder actions (see [Kondili Example](#example-3)). Potential fixes: (requires changing the package code)
+- If a `producer` can produce more than 1 material, it is possible to produce all materials it is capable of producing simultaneously. This does not account for resource constraints (e.g., single reactor can only do reaction 1 or reaction 2, but not both simultaneously). However, these can be enforced manually with the reorder actions. Potential fixes: (requires changing the package code)
   - Drop inventory capacities to 0 when the production equipment is occupied. Requires modeling each production unit as its own node.
   - Develop a production model (perhaps based on the Resource-Task Network paradigm)
 
@@ -204,18 +204,6 @@ This example is for a 100 period simulation of a supply network with one warehou
 *See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
 
 ![](examples/figs/ex2_inventory.png)
-
-### Example 3
-
-This example shows how the simulator can be used for a chemical production system with co-production and material recycle. The system modeled is the batch plant described in [Kondili, et al. (1993)](https://www.sciencedirect.com/science/article/pii/009813549380015F?via%3Dihub), which can be modeled as the following supply network:
-
-![](examples/figs/ex3_schematic_drawio.png)
-
-*See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex3.jl).*
-
-![](examples/figs/ex3_intermediate_tanks.png)
-![](examples/figs/ex3_product_tanks.png)
-![](examples/figs/ex3_sales.png)
 
 ## Contact
 

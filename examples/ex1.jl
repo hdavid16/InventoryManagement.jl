@@ -36,11 +36,11 @@ set_props!(net, 3, Dict(:initial_inventory => Dict(:A => 100),
 #specify sales prices, transportation costs, lead time
 set_props!(net, 1, 3, Dict(:sales_price => Dict(:A => 2),
                           :transportation_cost => Dict(:A => 0.01),
-                          :lead_time => Poisson(3)))
+                          :lead_time => Dict(:A => Poisson(3))))
 
 set_props!(net, 2, 3, Dict(:sales_price => Dict(:A => 1),
                           :transportation_cost => Dict(:A => 0.01),
-                          :lead_time => Poisson(7)))
+                          :lead_time => Dict(:A => Poisson(7))))
 
 #create environment
 num_periods = 100

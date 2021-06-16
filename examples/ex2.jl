@@ -25,7 +25,7 @@ set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100),
 #specify sales prices, transportation costs, lead time
 set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
                           :transportation_cost => Dict(:A => 0.01),
-                          :lead_time => Poisson(5)))
+                          :lead_time => Dict(:A => Poisson(5))))
 
 #create environment
 num_periods = 100

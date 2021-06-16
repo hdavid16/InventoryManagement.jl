@@ -74,7 +74,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
     capacities = deepcopy(Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers))
 
     #sample lead times
-    leads = Dict(a => rand(get_prop(x.network, a, :lead_time)) for a in edges(x.network))
+    leads = Dict((a,p) => rand(get_prop(x.network, a, :lead_time)[p]) for a in edges(x.network), p in mats)
 
     nonsources = [n for n in vertices(x.network) if !isempty(inneighbors(x.network, n))]
     for (i,p) in enumerate(mats) #loop by materials
@@ -190,7 +190,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                     # @warn "Replenishment request made in period $(x.period) by node $(a[2]) to node $(a[1]) for material $p was reduced from $amount to $accepted due to insufficient production capacity or insufficient inventory."
                     if x.reallocate
                         next_sup = findfirst(k -> k == a[1], sup_priority) + 1 #get next in line
-                        if next_sup <= length(sup_priority) && Edge((next_sup, a[2])) in edges(x.network) #check that there is a next one in line
+                        if next_sup <= length(sup_priority) #check that there is a next one in line
                             new_sup = sup_priority[next_sup]
                             # @warn "Reallocating non-accepted request for node $(a[2]) for material $p to node $new_sup (amount = $unfulfilled)"
                             jj = findfirst(k -> k == (new_sup, a[2]), arcs) #find index for that arc in the action matrix
@@ -202,7 +202,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
 
                 #store shipments and lead times
                 if accepted > 0 #update active shipments
-                    lead = leads[Edge(a[1],a[end])]
+                    lead = leads[Edge(a[1],a[end]), p]
                     if a[1] in x.producers
                         if accepted_inv > 0
                             push!(x.shipments, [a, p, accepted_inv, lead])
