@@ -326,10 +326,10 @@ function update_position!(x::SupplyChainEnv, n::Int, p::Any)
     onhand = filter(j -> j.period == x.period && j.node == n && j.material == p, x.inv_on_hand).level[1] #on_hand inventory
     backlog = 0 #initialize
     if x.backlog
-        if n in x.markets
+        if n in x.markets #find demand backlog
             backlog += filter(i -> i.period == x.period && i.node == n && i.material == p, x.demand).unfulfilled[1]
-        else
-            backlog += sum(filter(i -> i.period == x.period && i.arc[1] == n && i.material == p, x.replenishments).unfulfilled)
+        else #find any unfulfilled replenishment request that was not reallocated
+            backlog += sum(filter(i -> i.period == x.period && i.arc[1] == n && i.material == p && ismissing(i.reallocated), x.replenishments).unfulfilled)
         end
     end
     push!(x.inv_position, [x.period, n, p, onhand + making + upstream - backlog]) #update inventory
