@@ -83,12 +83,12 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
         init_inv = get_prop(network, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p], 0))
     end
-    inv_level = copy(inv_on_hand)
     inv_pipeline = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
                              :arc => repeat(arcs, inner = length(mats)),
                              :material => repeat(mats, outer = length(arcs)),
                              :level => zeros(length(mats)*length(arcs)))
     inv_position = select(inv_on_hand, [:period, :node, :material, :level])
+    inv_level = copy(inv_position)
     replenishments = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(arcs)),
                                :arc => Tuple[],#repeat(arcs, inner = length(mats)),
                                :material => Any[],#repeat(mats, outer = length(arcs)),

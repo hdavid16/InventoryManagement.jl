@@ -318,7 +318,7 @@ end
 """
     update_positions!(x::SupplyChainEnv, n::Int, p::Any)
 
-Update inventory positions for material `p` at node `n`.
+Update inventory position and inventory level for material `p` at node `n`.
 """
 function update_position!(x::SupplyChainEnv, n::Int, p::Any)
     making = sum(filter(j -> j.arc[end] == n && j.material == p, x.production).amount) #commited production order
