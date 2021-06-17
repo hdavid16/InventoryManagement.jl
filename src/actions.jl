@@ -92,7 +92,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                     end
                 end
                 if iszero(amount) #continue to next iteration if request is 0
-                    push!(x.replenishments, [x.period, a, p, 0, 0, 0, 0])
+                    push!(x.replenishments, [x.period, a, p, act[i,j], 0, 0, 0, 0])
                     continue 
                 end
                 supply = filter(k -> k.period == x.period && k.node == a[1] && k.material == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
@@ -180,9 +180,6 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                                    (x.inv_pipeline.material .== p), :level] .+= accepted
                 end
 
-                #update order quantity
-                act[i,j] = accepted
-
                 #chekc if some was not accepted and reallocate
                 # unfulfilled = amount - accepted #amount not accepted
                 new_alloc = missing
@@ -206,24 +203,24 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                     if a[1] in x.producers
                         if accepted_inv > 0
                             push!(x.shipments, [a, p, accepted_inv, lead])
-                            push!(x.replenishments, [x.period, a, p, accepted_inv, lead, amount, new_alloc])
+                            push!(x.replenishments, [x.period, a, p, act[i,j], accepted_inv, lead, amount, new_alloc])
                         end
                         if accepted_sched > 0
                             for (k, acpt_sched) in enumerate(accepted_sched_k)
                                 push!(x.shipments, [a, p, acpt_sched, lead + sched_lead[k]])
-                                push!(x.replenishments, [x.period, a, p, acpt_sched, lead + sched_lead[k], amount, new_alloc])
+                                push!(x.replenishments, [x.period, a, p, act[i,j], acpt_sched, lead + sched_lead[k], amount, new_alloc])
                             end
                         end
                         if accepted_prod > 0
                             push!(x.shipments, [a, p, accepted_prod, lead + prod_time])
-                            push!(x.replenishments, [x.period, a, p, accepted_prod, lead + prod_time, amount, new_alloc])
+                            push!(x.replenishments, [x.period, a, p, act[i,j], accepted_prod, lead + prod_time, amount, new_alloc])
                         end
                     else
                         push!(x.shipments, [a, p, accepted, lead])
-                        push!(x.replenishments, [x.period, a, p, accepted, lead, amount, new_alloc])
+                        push!(x.replenishments, [x.period, a, p, act[i,j], accepted, lead, amount, new_alloc])
                     end
                 else #no request made
-                    push!(x.replenishments, [x.period, a, p, 0, 0, amount, new_alloc])
+                    push!(x.replenishments, [x.period, a, p, act[i,j], 0, 0, amount, new_alloc])
                 end
             end
         end
@@ -390,7 +387,7 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
             #production cost
             if n in x.producers
                 prod_cost = get_prop(x.network, n, :production_cost)[p]
-                produced = sum(filter(j -> j.period == x.period && j.arc[1] == n && j.material == p, x.replenishments).amount)
+                produced = sum(filter(j -> j.period == x.period && j.arc[1] == n && j.material == p, x.replenishments).accepted)
                 profit -= prod_cost * produced
             #sales profit at markets (and penalize for unfulfilled demand)
             elseif n in x.markets
