@@ -85,9 +85,10 @@ A `SupplyChainEnv` has the following fields:
 - `distributors::Array`: list of distribution nodes (excludes end distributors where markets exist)
 - `materials::Array`: list of all material (material) names (strings)
 - `bill_of_materials::Matrix` square matrix with BOM (rows = input materials, cols = output materials; indices follow materials list; positive value is a co-product, negative is a feedstock)
-- `inv_on_hand::DataFrame`: timeseries On Hand Inventory @ each node at the end of each period
-- `inv_pipeline::DataFramet`: timeseries Pipeline Inventory on each edge at the end of each period
-- `inv_position::DataFrame`: timeseries Inventory Position for each node at the end of each period
+- `inv_on_hand::DataFrame`: timeseries with on hand inventories @ each node.
+- `inv_level::DataFrame`: timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
+- `inv_pipeline::DataFrame`: timeseries with pipeline inventories on each arc.
+- `inv_position::DataFrame`: timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
 - `shipments::DataFrame`: current shipments and time to arrival for each node
 - `production::DataFrame`: current material production committed to an edge and lead time to ship. Note: byproducts are scheduled to go to the producing node `n` (edge `(n,n)`).

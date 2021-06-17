@@ -11,8 +11,9 @@ abstract type AbstractEnv end
 - `materials::Vector`: Vector with the names of all materials in the system.
 - `bill_of_materials::Array`: Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; row with positive value is a co-product, row with negative value is a input (reactant).
 - `inv_on_hand::DataFrame`: Timeseries with on hand inventories @ each node.
+- `inv_level::DataFrame`: Timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
 - `inv_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
-- `inv_position::DataFrame`: Timeseries with inventory positions @ each node.
+- `inv_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `replenishments::DataFrame`: Timeseries with replenishment orders placed on each arc.
 - `shipments::DataFrame`: Temp table with active shipments and time to arrival on each arc.
 - `production::DataFrame`: Temp table with active material production commited to an arc and time to ship.
@@ -34,6 +35,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     materials::Vector
     bill_of_materials::Array
     inv_on_hand::DataFrame
+    inv_level::DataFrame
     inv_pipeline::DataFrame
     inv_position::DataFrame
     replenishments::DataFrame
@@ -81,6 +83,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
         init_inv = get_prop(network, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p], 0))
     end
+    inv_level = copy(inv_on_hand)
     inv_pipeline = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
                              :arc => repeat(arcs, inner = length(mats)),
                              :material => repeat(mats, outer = length(arcs)),
@@ -113,7 +116,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     reward = 0
     period = 0
     num_periods = num_periods
-    env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_pipeline, inv_position,
+    env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_level, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
                     profit, reward, period, num_periods, discount, backlog, reallocate, seed)
 

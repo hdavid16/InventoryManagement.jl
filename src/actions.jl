@@ -334,6 +334,7 @@ function update_position!(x::SupplyChainEnv, n::Int, p::Any)
         end
         backorder = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.replenishments).unfulfilled)
     end
+    push!(x.inv_level, [x.period, n, p, onhand - backlog]) #update inventory
     push!(x.inv_position, [x.period, n, p, onhand + making + upstream + backorder - backlog]) #update inventory
 end
 
