@@ -70,6 +70,9 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
     mats = x.materials
     bom = x.bill_of_materials
 
+    #store copy of action vector
+    requests = copy(act)
+
     #store original production capacities (to account for commited capacity and commited inventory in next section)
     capacities = deepcopy(Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers))
 
@@ -92,7 +95,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                     end
                 end
                 if iszero(amount) #continue to next iteration if request is 0
-                    push!(x.replenishments, [x.period, a, p, act[i,j], 0, 0, 0, 0])
+                    push!(x.replenishments, [x.period, a, p, requests[i,j], 0, 0, 0, 0])
                     continue 
                 end
                 supply = filter(k -> k.period == x.period && k.node == a[1] && k.material == p, x.inv_on_hand).level[1] #on_hand inventory at supplier
@@ -203,24 +206,24 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                     if a[1] in x.producers
                         if accepted_inv > 0
                             push!(x.shipments, [a, p, accepted_inv, lead])
-                            push!(x.replenishments, [x.period, a, p, act[i,j], accepted_inv, lead, amount, new_alloc])
+                            push!(x.replenishments, [x.period, a, p, requests[i,j], accepted_inv, lead, amount, new_alloc])
                         end
                         if accepted_sched > 0
                             for (k, acpt_sched) in enumerate(accepted_sched_k)
                                 push!(x.shipments, [a, p, acpt_sched, lead + sched_lead[k]])
-                                push!(x.replenishments, [x.period, a, p, act[i,j], acpt_sched, lead + sched_lead[k], amount, new_alloc])
+                                push!(x.replenishments, [x.period, a, p, requests[i,j], acpt_sched, lead + sched_lead[k], amount, new_alloc])
                             end
                         end
                         if accepted_prod > 0
                             push!(x.shipments, [a, p, accepted_prod, lead + prod_time])
-                            push!(x.replenishments, [x.period, a, p, act[i,j], accepted_prod, lead + prod_time, amount, new_alloc])
+                            push!(x.replenishments, [x.period, a, p, requests[i,j], accepted_prod, lead + prod_time, amount, new_alloc])
                         end
                     else
                         push!(x.shipments, [a, p, accepted, lead])
-                        push!(x.replenishments, [x.period, a, p, act[i,j], accepted, lead, amount, new_alloc])
+                        push!(x.replenishments, [x.period, a, p, requests[i,j], accepted, lead, amount, new_alloc])
                     end
                 else #no request made
-                    push!(x.replenishments, [x.period, a, p, act[i,j], 0, 0, amount, new_alloc])
+                    push!(x.replenishments, [x.period, a, p, requests[i,j], 0, 0, amount, new_alloc])
                 end
             end
         end
@@ -329,7 +332,7 @@ function update_position!(x::SupplyChainEnv, n::Int, p::Any)
         else #find any unfulfilled replenishment request that was not reallocated
             backlog += sum(filter(i -> i.period == x.period && i.arc[1] == n && i.material == p && ismissing(i.reallocated), x.replenishments).unfulfilled)
         end
-        backorder = sum(filter(j -> j.period == x.period && j.arc[end] == n && j.material == p, x.replenishments).unfulfilled)
+        backorder = sum(filter(i -> i.period == x.period && i.arc[end] == n && i.material == p && ismissing(i.reallocated), x.replenishments).unfulfilled)
     end
     push!(x.inv_level, [x.period, n, p, onhand - backlog]) #update inventory
     push!(x.inv_position, [x.period, n, p, onhand + making + upstream + backorder - backlog]) #update inventory
