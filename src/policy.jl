@@ -29,11 +29,14 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
 
     #initialize action matrix
     action = zeros(length(mats), length(arcs))
+    state_df = filter([:period] => j -> j == t, env.inv_position, view=true) #on_hand inventory at supplier
+    state_grp = groupby(state_df, [:node, :material])
     for n in nodes, (k, p) in enumerate(mats)
         param1[n,p] < 0 && continue #if trigger level is negative, skip it
         reorder = 0
         #check if reorder is triggered & set reorder policy
-        state = filter([:period, :node, :material] => (i1, i2, i3) -> i1 == t && i2 == n && i3 == p, env.inv_position, view=true).level[1]
+        state = state_grp[(node = n, material = p)].level[1]
+        # state = filter([:period, :node, :material] => (i1, i2, i3) -> i1 == t && i2 == n && i3 == p, env.inv_position, view=true).level[1]
         if state <= param1[n,p]
             if kind == :rQ #rQ policy
                 reorder = param2[n,p]
