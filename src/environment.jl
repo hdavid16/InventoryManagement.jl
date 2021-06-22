@@ -23,8 +23,11 @@ abstract type AbstractEnv end
 - `period::Int`: Current period in the simulation.
 - `num_periods::Int`: Number of periods in the simulation.
 - `discount::Float64`: Time discount factor (i.e. interest rate).
-- `backlog::Bool`: Indicator if backlogging is allowed.
-- `reallocate::Bool`: Indicator if unfulfilled requests should be reallocated to alternate suppliers.
+- `options::Dict`: Simulation options
+  - `backlog::Bool`: Indicator if backlogging is allowed.
+  - `reallocate::Bool`: Indicator if unfulfilled requests should be reallocated to alternate suppliers.
+  - `evaluate_profit::Bool`: Indicator if the profit should be evaluated at each node
+  - `capacitated_inventory::Bool`: Indicator if inventory limits should be enforced
 - `seed::Int`: Random seed.
 """
 mutable struct SupplyChainEnv <: AbstractEnv
@@ -47,23 +50,22 @@ mutable struct SupplyChainEnv <: AbstractEnv
     period::Int
     num_periods::Int
     discount::Float64
-    backlog::Bool
-    reallocate::Bool
+    options::Dict
     seed::Int
 end
 
 """
     SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                         discount::Float64=0.0, backlog::Bool=false,
-                        reallocate::Bool=false,
-                        seed::Int=0)
+                        reallocate::Bool=false, evaluate_profit::Bool=true,
+                        capacitated_inventory::Bool=true, seed::Int=0)
 
 Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
 """
 function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                         discount::Float64=0.0, backlog::Bool=false,
-                        reallocate::Bool=false,
-                        seed::Int=0)
+                        reallocate::Bool=false, evaluate_profit::Bool=true,
+                        capacitated_inventory::Bool=true, seed::Int=0)
     #get main nodes
     nodes = vertices(network)
     #get main edges
@@ -117,9 +119,12 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     reward = 0
     period = 0
     num_periods = num_periods
+    options = Dict(:backlog => backlog, :reallocate => reallocate, 
+                   :evaluate_profit => evaluate_profit,
+                   :capacitated_inventory => capacitated_inventory)
     env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_level, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
-                    profit, reward, period, num_periods, discount, backlog, reallocate, seed)
+                    profit, reward, period, num_periods, discount, options, seed)
 
     Random.seed!(env)
 

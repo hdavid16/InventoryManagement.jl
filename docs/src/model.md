@@ -38,7 +38,7 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
-- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
 - `:production_cost::Dict`: unit production cost for each material (`keys`)
 - `:production_capacity::Dict`: maximum production capacity for each material (`keys`).
 - `:production_time::Dict`: production lead time for each material (`keys`).
@@ -47,13 +47,13 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
 
 `Markets` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.reallocate == true`).
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `[D]` where `D` is a `Number`.
 - `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each material (`keys`)
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_frequency` parameters are ignored.
@@ -98,6 +98,8 @@ A `SupplyChainEnv` has the following fields:
 - `period::Int`: period in the simulation
 - `num_periods::Int`: number of periods in the simulation
 - `discount::Float64`: time discount factor (interest rate)
-- `backlog::Bool`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales
-- `reallocate::Bool`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
+- `options::Dict`: simulation options:
+  - `backlog::Bool`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales
+  - `reallocate::Bool`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
+  - `evaluate_profit::Bool`: the simulation will calculate the proft at each node if `true` and save the results in `env.profit`.
 - `seed::Int`: random seed
