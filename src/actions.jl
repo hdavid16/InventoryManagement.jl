@@ -136,7 +136,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
 
                     #schedule production
                     prod_time = get_prop(x.network, a[1], :production_time)[p] #production time
-                    push!(x.production, (a, p, accepted_prod, prod_time))
+                    accepted_prod > 0 && push!(x.production, (a, p, accepted_prod, prod_time))
 
                     #update commited scheduled production of byproducts to new destination (decrease amount sent to self storage and add commited amount to arc)
                     for (k, acpt_sched) in enumerate(accepted_sched_k)
@@ -248,7 +248,7 @@ function update_production!(x::SupplyChainEnv)
     bom = x.bill_of_materials
 
     #find production that has completed
-    produced = filter(i -> iszero(i.lead) && !iszero(i.amount), x.production) #find active production that has completed
+    produced = filter(i -> i.lead <= 0, x.production) #find active production that has completed
     for i in 1:nrow(produced) #add produced material to pipeline
         a, p, amount = produced[i, [:arc, :material, :amount]]
         #restore production capacities
@@ -271,7 +271,7 @@ function update_production!(x::SupplyChainEnv)
                           (x.inv_on_hand.material .== p), :level] .+= amount
         end
     end
-    filter!(i -> i.lead > 0 && i.amount > 0, x.production) #remove produced inventory that was shipped (and any zero values)
+    filter!(i -> i.lead > 0, x.production) #remove produced inventory that was shipped (and any zero values)
 end
 
 """
@@ -280,7 +280,7 @@ end
 Update inventories throughout the network for arrived shipments.
 """
 function update_shipments!(x::SupplyChainEnv)
-    arrivals = filter(i -> iszero(i.lead) && !iszero(i.amount), x.shipments) #find active shipments with 0 lead time
+    arrivals = filter(i -> i.lead <= 0, x.shipments) #find active shipments with 0 lead time
     for i in 1:nrow(arrivals)
         a, p, amount = arrivals[i, [:arc, :material, :amount]]
         x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
@@ -290,7 +290,7 @@ function update_shipments!(x::SupplyChainEnv)
                        (string.(x.inv_pipeline.arc) .== string(a)) .&
                        (x.inv_pipeline.material .== p), :level] .-= amount
     end
-    filter!(i -> i.lead > 0 && i.amount > 0, x.shipments) #remove shipments that arrived (and any zero values)
+    filter!(i -> i.lead > 0, x.shipments) #remove shipments that arrived (and any zero values)
     return arrivals
 end
 
