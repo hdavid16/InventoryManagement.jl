@@ -54,15 +54,15 @@ end
 
 """
     SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        discount::Float64=0.0, backlog::Bool=true,
-                        reallocate::Bool=true,
+                        discount::Float64=0.0, backlog::Bool=false,
+                        reallocate::Bool=false,
                         seed::Int=0)
 
 Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
 """
 function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        discount::Float64=0.0, backlog::Bool=true,
-                        reallocate::Bool=true,
+                        discount::Float64=0.0, backlog::Bool=false,
+                        reallocate::Bool=false,
                         seed::Int=0)
     #get main nodes
     nodes = vertices(network)

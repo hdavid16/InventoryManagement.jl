@@ -8,6 +8,11 @@ Apply an inventory policy to specify the replinishment orders for each material
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
                         kind::Symbol = :rQ, review_period::Int = 1)
 
+    #check review period
+    if !iszero(mod(env.period,review_period)) #if not in review period, send null action
+        return zeros(length(env.materials)*ne(env.network))
+    end
+
     #read parameters
     t = env.period
     nodes = [n for n in vertices(env.network) if !isempty(inneighbors(env.network, n))] #all non-source nodes can place orders
@@ -22,18 +27,13 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         end
     end
 
-    #check review period
-    if !iszero(mod(t,review_period)) #if not in review period, send null action
-        return zeros(length(mats)*length(arcs))
-    end
-
     #initialize action matrix
     action = zeros(length(mats), length(arcs))
     for n in nodes, (k, p) in enumerate(mats)
         param1[n,p] < 0 && continue #if trigger level is negative, skip it
         reorder = 0
         #check if reorder is triggered & set reorder policy
-        state = filter(i -> i.period == t && i.node == n && i.material == p, env.inv_position).level[1]
+        state = filter([:period, :node, :material] => (i1, i2, i3) -> i1 == t && i2 == n && i3 == p, env.inv_position).level[1]
         if state <= param1[n,p]
             if kind == :rQ #rQ policy
                 reorder = param2[n,p]
@@ -62,6 +62,5 @@ function simulate_policy!(env::SupplyChainEnv, args...)
     for t in 1:env.num_periods
         action = reorder_policy(env, args...)
         (env)(action)
-        mod(env.period,24*7) == 0 && println("Week $(env.period/24/7).")
     end
 end

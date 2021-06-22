@@ -29,7 +29,7 @@ set_props!(net, 1, 2, Dict(:sales_price => Dict(:A => 2),
 
 #create environment
 num_periods = 100
-env = SupplyChainEnv(net, num_periods)
+env = SupplyChainEnv(net, num_periods, backlog = true)
 
 #define reorder policy parameters
 policy = :rQ #(s, S) policy

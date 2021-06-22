@@ -44,7 +44,7 @@ set_props!(net, 2, 3, Dict(:sales_price => Dict(:A => 1),
 
 #create environment
 num_periods = 100
-env = SupplyChainEnv(net, num_periods)
+env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
 
 #define reorder policy parameters
 policy = :sS #(s, S) policy
