@@ -348,9 +348,6 @@ function simulate_markets!(x::SupplyChainEnv)
         dmnd_seq = get_prop(x.network, n, :demand_sequence)[p]
         freq = Bernoulli(get_prop(x.network, n, :demand_frequency)[p]) #demand frequency
         dmnd = get_prop(x.network, n, :demand_distribution)[p] #demand distribution
-        if dmnd isa Sampleable
-            dmnd = truncated(dmnd,0,Inf)
-        end
         q = iszero(dmnd_seq) ? rand(freq) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
         demand = [x.period, n, p, q, 0., 0.] #initialize demand vector to store in df
         inv = filter(i -> i.period == x.period && i.node == n && i.material == p, x.inv_on_hand).level[1] #current inventory at node

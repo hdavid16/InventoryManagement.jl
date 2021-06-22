@@ -37,7 +37,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
                 network.vprops[n][key][p] = 0.
             end
-            @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
+            @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p at node $n must be non-negative."
         end
     end
     for n in mrkts, key in market_keys
@@ -54,13 +54,20 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                 end
             end
             if key == :demand_frequency
-                @assert 0 <= network.vprops[n][key][p] <= 1 "Parameter $key for material $p on node $n must be between 0 and 1."
+                @assert 0 <= network.vprops[n][key][p] <= 1 "Parameter $key for material $p at node $n must be between 0 and 1."
             elseif key == :demand_distribution
-                @assert rand(network.vprops[n][key][p]) isa Number "Parameter $key for material $p on node $n must be a sampleable distribution or an array."
+                dmnd_dst = network.vprops[n][key][p]
+                @assert rand(dmnd_dst) isa Number "Parameter $key for material $p at node $n must be a sampleable distribution or an array."
+                dmnd_dst isa Array && @assert length(dmnd_dst) == 1 && dmnd_dst[1] >= 0 "Parameter $key for material $p at node $n cannot be negative."
+                if minimum(dmnd_dst) < 0 
+                    tmp = Dict(p => truncated(dmnd_dst, 0, Inf))
+                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
+                    @warn "Parameter $key for material $p at node $n may take on negative values. The distribution will be truncated."
+                end
             elseif key == :demand_sequence
                 @assert length(network.vprops[n][key][p]) == num_periods "The demand sequence for material $p at node $n must be a vector with $num_periods entries."
             else
-                @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
+                @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p at node $n must be non-negative."
             end
         end
     end
@@ -71,7 +78,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                 network.vprops[n][key][p] = 0.
             end
             param = network.vprops[n][key][p]
-            @assert param >= 0 "Parameter $key for material $p on node $n must be non-negative."
+            @assert param >= 0 "Parameter $key for material $p at node $n must be non-negative."
             (key == :production_time && mod(param,1) > 0) && @warn "Production time for material $p at node $n is not integer. Round-off error will occur because the simulation uses discrete time."
         end
     end
@@ -89,6 +96,12 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
             if key == :lead_time
                 lt = network.eprops[Edge(a...)][key][p]
                 @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
+                lt isa Array && @assert length(lt) == 1 && lt[1] >= 0 "Parameter $key for material $p on arc $a cannot be negative and must be single-valued."
+                if minimum(lt) < 0 
+                    tmp = Dict(p => truncated(lt, 0, Inf))
+                    network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
+                    @warn "Parameter $key for material $p on arc $a may take on negative values. The distribution will be truncated."
+                end
                 (lt isa Distribution{Univariate, Continuous} || (lt isa Array && mod(lt[1],1) > 0)) && @warn "The lead time for material $p on arc $a is not discrete. Round-off error will occur because the simulation uses discrete time."
             else
                 @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
