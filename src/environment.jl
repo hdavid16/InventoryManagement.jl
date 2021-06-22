@@ -94,17 +94,17 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                                :material => Any[],#repeat(mats, outer = length(arcs)),
                                :requested => Float64[],#total amount requested
                                :accepted => Float64[],#zeros(length(mats)*length(arcs)),
-                               :lead => Int[],#zeros(Int, length(mats)*length(arcs)),
+                               :lead => Float64[],#zeros(Int, length(mats)*length(arcs)),
                                :unfulfilled => Float64[],#zeros(length(mats)*length(arcs)),
                                :reallocated => Any[])#Any[missing for i in 1:length(mats)*length(arcs)])
     shipments = DataFrame(:arc => [],
                           :material => [],
                           :amount => Float64[],
-                          :lead => Int[])
+                          :lead => Float64[])
     production = DataFrame(:arc => [],
                            :material => [],
                            :amount => Float64[],
-                           :lead => Int[])
+                           :lead => Float64[])
     demand = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(mrkts)),
                        :node => Int[],#repeat(mrkts, inner = length(mats)),
                        :material => Any[],#repeat(mats, outer = length(mrkts)),

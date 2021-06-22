@@ -70,7 +70,9 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
                 network.vprops[n][key][p] = 0.
             end
-            @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
+            param = network.vprops[n][key][p]
+            @assert param >= 0 "Parameter $key for material $p on node $n must be non-negative."
+            (key == :production_time && mod(param,1) > 0) && @warn "Production time for material $p at node $n is not integer. Round-off error will occur because the simulation uses discrete time."
         end
     end
     for a in arcs, key in arc_keys
@@ -85,7 +87,9 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                 end
             end            
             if key == :lead_time
-                @assert rand(network.eprops[Edge(a...)][key][p]) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
+                lt = network.eprops[Edge(a...)][key][p]
+                @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
+                (lt isa Distribution{Univariate, Continuous} || (lt isa Array && mod(lt[1],1) > 0)) && @warn "The lead time for material $p on arc $a is not discrete. Round-off error will occur because the simulation uses discrete time."
             else
                 @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
             end
