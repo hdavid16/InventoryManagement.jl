@@ -21,10 +21,12 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #intialize next period on-hand and pipeline inventories with previous inventories
     for p in x.materials
         for n in vertices(x.network)
-            push!(x.inv_on_hand, [x.period, n, p, prev_onhand_grp[(node = n, material = p)][1,:level], 0]) #intialize with previous inventory levels
+            prev = prev_onhand_grp[(node = n, material = p)][1,:level] #previous on hand inventory
+            push!(x.inv_on_hand, [x.period, n, p, prev, 0]) #intialize with previous inventory levels
         end
         for a in edges(x.network)
-            push!(x.inv_pipeline, [x.period, (a.src,a.dst), p, prev_pipeln_grp[(arc = (a.src,a.dst), material = p)][1,:level]]) #intialize with previous inventory levels
+            prev = prev_pipeln_grp[(arc = (a.src,a.dst), material = p)][1,:level] #previous pipeline inventory
+            push!(x.inv_pipeline, [x.period, (a.src,a.dst), p, prev]) #intialize with previous inventory levels
         end
     end
     
@@ -99,6 +101,12 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
     supply_df = filter(:period => k -> k == x.period, x.inv_on_hand, view=true) #on_hand inventory supply
     supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
 
+    #get backlog
+    if x.options[:backlog] && x.period > 1
+        last_orders_df = filter(:period => i -> i == x.period-1, x.replenishments, view=true) #replenishment orders from previous period
+        last_orders_grp = groupby(last_orders_df, :material) #group by material
+    end
+
     #place requests
     for (i,p) in enumerate(mats) #loop by materials
         for n in nonsources #loop by nodes placing requests
@@ -111,9 +119,9 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                 amount = act[i,j] 
                 if x.options[:backlog] && x.period > 1 #add previous period's backlog
                     if x.options[:reallocate] && l == 1
-                        amount += filter([:material, :arc, :period] => (k1, k2, k3) -> k1 == p && k2 == (sup_priority[end],n) && k3 == x.period-1, x.replenishments, view=true).unfulfilled[1]
+                        amount += filter(:arc => k -> k == (sup_priority[end],n), last_orders_grp[(material = p,)], view=true).unfulfilled[1]
                     elseif !x.options[:reallocate]
-                        amount += filter([:material, :arc, :period] => (k1, k2, k3) -> k1 == p && k2 == a && k3 == x.period-1, x.replenishments, view=true).unfulfilled[1]
+                        amount += filter(:arc => k -> k == a, last_orders_grp[(material = p,)], view=true).unfulfilled[1]
                     end
                 end
 
@@ -356,9 +364,10 @@ end
 """
     update_positions!(x::SupplyChainEnv)
 
-Update inventory position and inventory level for all materials all nodes.
+Update inventory position and inventory level for all materials and nodes.
 """
 function update_positions!(x::SupplyChainEnv)
+    #filter data
     on_hand_df = filter(:period => j -> j == x.period, x.inv_on_hand, view=true) #on_hand inventory at node
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
     pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories

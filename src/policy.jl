@@ -27,10 +27,12 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         end
     end
 
-    #initialize action matrix
-    action = zeros(length(mats), length(arcs))
-    state_df = filter([:period] => j -> j == t, env.inv_position, view=true) #on_hand inventory
+    #filter data for policy
+    state_df = filter(:period => j -> j == t, env.inv_position, view=true) #inventory position
     state_grp = groupby(state_df, [:node, :material]) #group by node and material
+
+    #create action matrix
+    action = zeros(length(mats), length(arcs)) #initialize action matrix
     for n in nodes, (k, p) in enumerate(mats)
         param1[n,p] < 0 && continue #if trigger level is negative, skip it
         reorder = 0
