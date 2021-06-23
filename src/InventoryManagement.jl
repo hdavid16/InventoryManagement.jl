@@ -1,6 +1,6 @@
 module InventoryManagement
 
-using DataFrames, Query
+using DataFrames
 using LightGraphs, MetaGraphs
 using Distributions, Random
 using IntervalSets
