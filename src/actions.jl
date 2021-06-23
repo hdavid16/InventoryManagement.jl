@@ -346,8 +346,8 @@ function enforce_inventory_limits!(x::SupplyChainEnv)
         node_max_inv = get_prop(x.network, n, :inventory_capacity)
         for p in x.materials
             max_inv = node_max_inv[p]
-            isinf(max_inv) && continue
-            onhand = onhand_grp[(node = n, material = p)].level[1]
+            isinf(max_inv) && continue #skip iteration if no inventory capacity (Inf)
+            onhand = onhand_grp[(node = n, material = p)].level[1] #onhand inventory
             if onhand > max_inv
                 x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
                             (x.inv_on_hand.node .== n) .&
@@ -375,7 +375,7 @@ function update_positions!(x::SupplyChainEnv)
     dmnd_df = filter(:period => i -> i == x.period, x.demand, view=true) #demand at markets
     dmnd_grp = groupby(dmnd_df, [:node, :material]) #group by node and material
     orders_df = filter([:period, :reallocated] => (i1, i2) -> i1 == x.period && ismissing(i2), x.replenishments, view=true) #replenishment orders from current period
-    orders_grp = groupby(orders_df, :material) #group by materil
+    orders_grp = groupby(orders_df, :material) #group by material
 
     for n in vertices(x.network), p in x.materials
         making = sum(filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == p, x.production, view=true).amount) #commited production order
@@ -438,6 +438,7 @@ Calculate profit at each node in the network
     (sales - production cost - purchase costs - transportation costs - holding costs).
 """
 function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
+    #filter data
     on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inv_on_hand, view=true) #on_hand inventory 
     onhand_grp = groupby(on_hand_df, [:node, :material])
     orders_df = filter(:period => i -> i == x.period, x.replenishments, view=true) #replenishment orders
@@ -446,6 +447,8 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     sales_grp = groupby(sales_df, [:node, :material])
     pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
+
+    #evaluate node profit
     for n in vertices(x.network)
         profit = 0 #initialize node profit
         for p in x.materials
