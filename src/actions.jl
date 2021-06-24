@@ -72,11 +72,25 @@ end
 Place inventory replenishment requests throughout the network.
 """
 function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
+    #get backlog
+    if x.options[:backlog] && x.period > 1
+        last_orders_df = filter(:period => i -> i == x.period-1, x.replenishments, view=true) #replenishment orders from previous period
+        last_orders_grp = groupby(last_orders_df, [:arc, :material]) #group by material and arc
+    end
 
     #exit if no action
     if iszero(act)
+        backlog = 0
         for a in arcs, p in x.materials
-            push!(x.replenishments, [x.period, a, p, 0, 0, 0, 0, missing])
+            if x.options[:backlog] && x.period > 1
+                sup_priority = get_prop(x.network, a[2], :supplier_priority)[p] #get supplier priority list
+                if x.options[:reallocate] && a[1] == sup_priority[1]
+                    backlog = last_orders_grp[(arc = (sup_priority[end],a[2]), material = p)].unfulfilled[1]
+                elseif !x.options[:reallocate]
+                    backlog = last_orders_grp[(arc = a, material = p)].unfulfilled[1]
+                end
+            end
+            push!(x.replenishments, [x.period, a, p, 0, 0, 0, backlog, missing])
         end
         return
     end
@@ -101,12 +115,6 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
     supply_df = filter(:period => k -> k == x.period, x.inv_on_hand, view=true) #on_hand inventory supply
     supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
 
-    #get backlog
-    if x.options[:backlog] && x.period > 1
-        last_orders_df = filter(:period => i -> i == x.period-1, x.replenishments, view=true) #replenishment orders from previous period
-        last_orders_grp = groupby(last_orders_df, :material) #group by material
-    end
-
     #place requests
     for (i,p) in enumerate(mats) #loop by materials
         for n in nonsources #loop by nodes placing requests
@@ -119,15 +127,15 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                 amount = act[i,j] 
                 if x.options[:backlog] && x.period > 1 #add previous period's backlog
                     if x.options[:reallocate] && l == 1
-                        amount += filter(:arc => k -> k == (sup_priority[end],n), last_orders_grp[(material = p,)], view=true).unfulfilled[1]
+                        amount += last_orders_grp[(arc = (sup_priority[end],n), material = p)].unfulfilled[1]
                     elseif !x.options[:reallocate]
-                        amount += filter(:arc => k -> k == a, last_orders_grp[(material = p,)], view=true).unfulfilled[1]
+                        amount += last_orders_grp[(arc = a, material = p)].unfulfilled[1]
                     end
                 end
 
                 #continue to next iteration if request is 0
                 if iszero(amount) 
-                    push!(x.replenishments, [x.period, a, p, requests[i,j], 0, 0, 0, missing])
+                    push!(x.replenishments, [x.period, a, p, 0, 0, 0, 0, missing])
                     continue 
                 end
 
@@ -155,23 +163,22 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                     #try to satisfy with material production
                     capacity = [] #get production capacity
                     mat_supply = [] #store max capacity based on raw material consumption for each raw material
-                    imats = findall(k -> !iszero(k), bom[:,i]) #indices of materials involved with production of p
-                    if !isempty(imats) #only add capacity if there is a non-zero bom for that material
+                    rmats = findall(k -> k < 0, bom[:,i]) #indices of raw materials involved with production of p
+                    cmats = findall(k -> k > 0, bom[:,i]) #indices for co-products
+                    if !isempty(rmats) #only add capacity if there is a non-zero bom for that material
                         push!(capacity, capacities[a[1]][p])
                     else
                         push!(capacity, 0)
                     end
-                    for ii in imats
+                    for ii in rmats
                         sup_pp = supply_grp[(node = a[1], material = mats[ii])].level[1] #supply of material involved in BOM
-                        if bom[ii,i] < 0 #only account for raw materials that are in the BOM
-                            push!(mat_supply, - sup_pp / bom[ii,i])
-                        elseif bom[ii,i] > 0 #add capacity constraint for any co-products (scaled by stoichiometry)
-                            push!(capacity, capacities[a[1]][mats[ii]] / bom[ii,i])
-                        end
+                        push!(mat_supply, - sup_pp / bom[ii,i]) #only account for raw materials that are in the BOM
+                    end 
+                    for ii in cmats #add capacity constraint for any co-products (scaled by stoichiometry)
+                        push!(capacity, capacities[a[1]][mats[ii]] / bom[ii,i])
                     end
                     accepted_prod = min(amount, capacity..., mat_supply...) #fulfill remaining with available capacity
                     amount -= accepted_prod #update pending amount
-                    capacities[a[1]][p] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
 
                     #total accepted request
                     accepted = accepted_inv + accepted_sched + accepted_prod
@@ -201,16 +208,16 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                                        (x.inv_pipeline.material .== p), :level] .+= accepted_inv
                     end
                     if accepted_prod > 0
-                        for ii in imats
-                            if bom[ii,i] < 0 #reactant consumed
-                                x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
-                                              (x.inv_on_hand.node .== a[1]) .&
-                                              (x.inv_on_hand.material .== mats[ii]), :level] .+= accepted_prod * bom[ii,i]
-                            elseif bom[ii,i] > 0 #coproducts scheduled for production
-                                a1 = (a[1],a[1]) #production of byproduct is going to inventory holding at current node (not being shipped)
-                                push!(x.production, (a1, mats[ii], accepted_prod*bom[ii,i], prod_time))
-                                capacities[a[1]][mats[ii]] -= accepted_prod*bom[ii,i]
-                            end
+                        capacities[a[1]][p] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
+                        for ii in rmats #reactant consumed
+                            x.inv_on_hand[(x.inv_on_hand.period .== x.period) .&
+                                            (x.inv_on_hand.node .== a[1]) .&
+                                            (x.inv_on_hand.material .== mats[ii]), :level] .+= accepted_prod * bom[ii,i]
+                        end
+                        for ii in cmats #coproducts scheduled for production
+                            a1 = (a[1],a[1]) #production of byproduct is going to inventory holding at current node (not being shipped)
+                            push!(x.production, (a1, mats[ii], accepted_prod*bom[ii,i], prod_time))
+                            capacities[a[1]][mats[ii]] -= accepted_prod*bom[ii,i]
                         end
                     end
                 else
