@@ -375,7 +375,7 @@ function update_positions!(x::SupplyChainEnv)
     orders_grp = groupby(orders_df, :material) #group by material
 
     for n in vertices(x.network), p in x.materials
-        making = sum(filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == p, x.production, view=true).amount) #commited production order
+        making = reduce(+,filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == p, x.production, view=true).amount, init=0) #commited production order
         upstream = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = p,)], view=true).level) #in-transit inventory
         onhand = onhand_grp[(node = n, material = p)].level[1] #on_hand inventory
         backorder = 0 #initialize replenishment orders placed to suppliers that are backlogged
