@@ -1,15 +1,17 @@
 """
     reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Int = 1)
+                        kind::Symbol = :rQ, review_period::Union{Int, Dict} = 1)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
+
+If `review_period` is a Dict, it must have (node, material) Tuples as the keys.
 """
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Int = 1)
+                        kind::Symbol = :rQ, review_period::Union{Int, Dict} = 1)
 
     #check review period
-    if !iszero(mod(env.period,review_period)) #if not in review period, send null action
+    if review_period isa Int && !iszero(mod(env.period,review_period)) #if not in review period, send null action
         return zeros(length(env.materials)*ne(env.network))
     end
 
@@ -25,6 +27,9 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         if !in((n,p), keys(param))
             param[(n,p)] = -1
         end
+        if review_period isa Dict && !in((n,p), keys(review_period))
+            review_period[(n,p)] = 1 #set to default value of 1
+        end
     end
 
     #filter data for policy
@@ -35,6 +40,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     action = zeros(length(mats), length(arcs)) #initialize action matrix
     for n in nodes, (k, p) in enumerate(mats)
         param1[n,p] < 0 && continue #if trigger level is negative, skip it
+        review_period isa Dict && !iszero(mod(env.period, review_period[n,p])) && continue #trigger if not in review period
         reorder = 0
         #check if reorder is triggered & set reorder policy
         state = state_grp[(node = n, material = p)].level[1]
