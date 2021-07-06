@@ -19,7 +19,6 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     end
 
     #read parameters
-    t = env.period
     nodes = [n for n in vertices(env.network) if !isempty(inneighbors(env.network, n))] #all non-source nodes can place orders
     arcs = [(e.src, e.dst) for e in edges(env.network)]
     mats = env.materials
@@ -36,7 +35,7 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     end
 
     #filter data for policy
-    state_df = filter(:period => j -> j == t, env.inv_position, view=true) #inventory position
+    state_df = filter(:period => j -> j == env.period, env.inv_position, view=true) #inventory position
     state_grp = groupby(state_df, [:node, :material]) #group by node and material
 
     #create action matrix
