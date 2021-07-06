@@ -1,6 +1,6 @@
 """
     reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Union{Int, Dict} = 1)
+                        kind::Symbol = :rQ, review_period::Union{Int, StepRange, Dict} = 1)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
@@ -8,11 +8,14 @@ Apply an inventory policy to specify the replinishment orders for each material
 If `review_period` is a Dict, it must have (node, material) Tuples as the keys.
 """
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Union{Int, Dict} = 1)
+                        kind::Symbol = :rQ, review_period::Union{Int, StepRange, Dict} = 1)
 
     #check review period
+    null_action = zeros(length(env.materials)*ne(env.network))
     if review_period isa Int && !iszero(mod(env.period,review_period)) #if not in review period, send null action
-        return zeros(length(env.materials)*ne(env.network))
+        return null_action
+    elseif review_period isa StepRange && !in(env.period, review_period)
+        return null_action
     end
 
     #read parameters
@@ -40,7 +43,10 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     action = zeros(length(mats), length(arcs)) #initialize action matrix
     for n in nodes, (k, p) in enumerate(mats)
         param1[n,p] < 0 && continue #if trigger level is negative, skip it
-        review_period isa Dict && !iszero(mod(env.period, review_period[n,p])) && continue #trigger if not in review period
+        if review_period isa Dict
+            review_period[n,p] isa Int && !iszero(mod(env.period, review_period[n,p])) && continue #trigger if not in review period
+            review_period[n,p] isa StepRange && !in(env.period, review_period[n,p]) && continue
+        end
         reorder = 0
         #check if reorder is triggered & set reorder policy
         state = state_grp[(node = n, material = p)].level[1]
