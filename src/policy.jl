@@ -1,6 +1,6 @@
 """
     reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Union{Int, StepRange, Vector, Dict} = 1)
+                        policy_type::Union{Dict, Symbol} = :rQ, review_period::Union{Int, StepRange, Vector, Dict} = 1)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
@@ -8,7 +8,7 @@ Apply an inventory policy to specify the replinishment orders for each material
 If `review_period` is a Dict, it must have (node, material) Tuples as the keys.
 """
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
-                        kind::Symbol = :rQ, review_period::Union{Int, StepRange, Vector, Dict} = 1)
+                        policy_type::Union{Dict, Symbol} = :rQ, review_period::Union{Int, StepRange, Vector, Dict} = 1)
 
     #check review period
     null_action = zeros(length(env.materials)*ne(env.network))
@@ -24,7 +24,6 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     mats = env.materials
 
     #check inputs
-    @assert kind in [:rQ, :sS] "The policy kind must be either `:rQ` or `:sS`."
     for n in nodes, p in mats, param in [param1, param2] #if no policy given for a node/material, set the params to -1 so that a reorder is never triggered
         if !in((n,p), keys(param))
             param[(n,p)] = -1
@@ -50,10 +49,13 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         #check if reorder is triggered & set reorder policy
         state = state_grp[(node = n, material = p)].level[1]
         if state <= param1[n,p]
-            if kind == :rQ #rQ policy
+            pol_type = policy_type isa Dict ? policy_type[n] : policy_type
+            if pol_type == :rQ #rQ policy
                 reorder = param2[n,p]
-            elseif kind == :sS #sS policy
+            elseif pol_type == :sS #sS policy
                 reorder = max(param2[n,p] - state, 0)
+            else
+                @assert pol_type in [:rQ, :sS] "The policy type must be either `:rQ` or `:sS`."
             end
         else
             continue
