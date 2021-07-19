@@ -1,103 +1,84 @@
 abstract type AbstractEnv end
 
+"""
+    Supply Chain Simulation Environment Constructor
+
+# Fields:
+- `network::MetaDiGraph`: Supply chain network directed graph.
+- `markets::Vector`: Vector of market nodes where demand occurs.
+- `producers::Vector`: Vector of producer nodes where material transformation occurs.
+- `distributors::Vector`: Vector of distribution centers (excludes market nodes).
+- `materials::Vector`: Vector with the names of all materials in the system.
+- `bill_of_materials::Array`: Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; row with positive value is a co-product, row with negative value is a input (reactant).
+- `inv_on_hand::DataFrame`: Timeseries with on hand inventories @ each node.
+- `inv_level::DataFrame`: Timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
+- `inv_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
+- `inv_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
+- `replenishments::DataFrame`: Timeseries with replenishment orders placed on each arc.
+- `shipments::DataFrame`: Temp table with active shipments and time to arrival on each arc.
+- `production::DataFrame`: Temp table with active material production commited to an arc and time to ship.
+- `demand::DataFrame`: Timeseries with realization of demand at each market, and amounts sold, unfulfilled demand, and backlog.
+- `profit::DataFrame`: Timeseries with profit @ each node.
+- `reward::Float64`: Final reward in the system (used for RL)
+- `period::Int`: Current period in the simulation.
+- `num_periods::Int`: Number of periods in the simulation.
+- `discount::Float64`: Time discount factor (i.e. interest rate).
+- `options::Dict`: Simulation options
+  - `backlog::Bool`: Indicator if backlogging is allowed.
+  - `reallocate::Bool`: Indicator if unfulfilled requests should be reallocated to alternate suppliers.
+  - `evaluate_profit::Bool`: Indicator if the profit should be evaluated at each node
+  - `capacitated_inventory::Bool`: Indicator if inventory limits should be enforced
+- `seed::Int`: Random seed.
+"""
 mutable struct SupplyChainEnv <: AbstractEnv
-    network::MetaDiGraph #Supply Chain Network
-    markets::Array #Array of markets (end distributors)
-    producers::Array #Array of producer nodes
-    distributors::Array #Array of distribution centers (excludes market nodes)
-    materials::Array #Array of material names
-    bill_of_materials::Array #Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; positive value is a co-product, negative is a input
-    inv_on_hand::DataFrame #Timeseries On Hand Inventory @ each node
-    inv_pipeline::DataFrame #Timeseries Pipeline Inventory on each arc
-    inv_position::DataFrame #Timeseries Inventory Position for each node
-    replenishments::DataFrame #Timeseries Replenishment orders placed on each arc
-    shipments::DataFrame #Current shipments and time to arrival for each node
-    production::DataFrame #Current material production commited to an arc and time to ship
-    demand::DataFrame #Timeseries with realization of demand at each market
-    profit::DataFrame #Timeseries with profit at each node
-    reward::Float64 #Final reward in the system (used for RL)
-    period::Int #period in the simulation
-    num_periods::Int #number of periods in the simulation
-    discount::Float64 #Time discount factor
-    backlog::Bool #Backlogging allowed if true; otherwise, lost sales
-    reallocate::Bool #reallocate unfulfilled requests if true
-    seed::Int #Random seed
+    network::MetaDiGraph
+    markets::Vector
+    producers::Vector
+    distributors::Vector
+    materials::Vector
+    bill_of_materials::Array
+    inv_on_hand::DataFrame
+    inv_level::DataFrame
+    inv_pipeline::DataFrame
+    inv_position::DataFrame
+    replenishments::DataFrame
+    shipments::DataFrame
+    production::DataFrame
+    demand::DataFrame
+    profit::DataFrame
+    reward::Float64
+    period::Int
+    num_periods::Int
+    discount::Float64
+    options::Dict
+    seed::Int
 end
 
-function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        discount::Float64=0.0, backlog::Bool=true,
-                        reallocate::Bool=true,
-                        seed::Int=0)
-    #perform checks
-        #order of materials in initial_inventory, production_capacity, market_demand and demand_frequency keys must be the same
+"""
+    SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
+                        discount::Float64=0.0, backlog::Bool=false,
+                        reallocate::Bool=false, evaluate_profit::Bool=true,
+                        capacitated_inventory::Bool=true, seed::Int=0)
 
+Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
+"""
+function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
+                        discount::Float64=0.0, backlog::Bool=false,
+                        reallocate::Bool=false, evaluate_profit::Bool=true,
+                        capacitated_inventory::Bool=true, seed::Int=0)
     #get main nodes
     nodes = vertices(network)
     #get main edges
     arcs = [(e.src,e.dst) for e in edges(network)]
     #get end distributors, producers, and distribution centers
     mrkts = [n for n in nodes if isempty(outneighbors(network, n))] #markets must be sink nodes
-    plants = [n for n in nodes if :production_cost in keys(network.vprops[n])]
-    nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
+    plants = [n for n in nodes if :production_capacity in keys(network.vprops[n])]
     dcs = setdiff(nodes, mrkts, plants)
     #get materials
     mats = get_prop(network, :materials)
     bom = get_prop(network, :bill_of_materials)
     #check inputs
-    if bom != [0] #if [0] then single product, no bom
-        @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
-        @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
-    end
-    @assert size(bom)[1] == length(mats) "The number of rows and columns in the bill of materials must be equal to the number of materials."
-    all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty]
-    plant_keys = [:production_cost, :production_time, :production_capacity]
-    arc_keys = [:sales_price, :transportation_cost, :lead_time]
-    for n in nodes, key in all_keys
-        @assert key in keys(network.vprops[n]) "$key not stored in distributor node $n."
-        for p in mats
-            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
-            @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
-        end
-    end
-    for n in mrkts, key in market_keys
-        @assert key in keys(network.vprops[n]) "$key not stored in market node $n."
-        for p in mats
-            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
-            if key == :demand_frequency
-                @assert 0 <= network.vprops[n][key][p] <= 1 "Parameter $key for material $p on node $n must be between 0 and 1."
-            elseif key == :demand_distribution
-                @assert rand(network.vprops[n][key][p]) isa Number "Parameter $key for material $p on node $n must be a sampleable distribution or an array."
-            else
-                @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
-            end
-        end
-    end
-    for n in plants, key in plant_keys
-        @assert key in keys(network.vprops[n]) "$key not stored in producer node $n."
-        for p in mats
-            @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
-            @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p on node $n must be non-negative."
-        end
-    end
-    for a in arcs, key in arc_keys
-        @assert key in keys(network.eprops[Edge(a...)]) "$key not stored in arc $a."
-        if key != :lead_time
-            for p in mats
-                @assert p in keys(network.eprops[Edge(a...)][key]) "Material $p not found in $key on arc $a."
-                @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
-            end
-        else
-            @assert rand(network.eprops[Edge(a...)][key]) isa Number "Parameter $key on arc $a must be a sampleable distribution or an array."
-        end
-    end
-    for n in nonsources, p in mats
-        key = :supplier_priority
-        @assert p in keys(network.vprops[n][key]) "Material $p not found in $key on node $n."
-        for s in network.vprops[n][key][p]
-            @assert s in inneighbors(network, n) "Supplier $s is not a supplier to node $n, but is listed in the supplier priority for that node for material $p."
-        end
-    end
+    check_inputs(network, nodes, arcs, mrkts, plants, mats, bom, num_periods)
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
     for n in nodes, p in mats
@@ -109,45 +90,52 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                              :material => repeat(mats, outer = length(arcs)),
                              :level => zeros(length(mats)*length(arcs)))
     inv_position = select(inv_on_hand, [:period, :node, :material, :level])
+    inv_level = copy(inv_position)
     replenishments = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(arcs)),
                                :arc => Tuple[],#repeat(arcs, inner = length(mats)),
                                :material => Any[],#repeat(mats, outer = length(arcs)),
-                               :amount => Float64[],#zeros(length(mats)*length(arcs)),
-                               :lead => Int[],#zeros(Int, length(mats)*length(arcs)),
+                               :requested => Float64[],#total amount requested
+                               :accepted => Float64[],#zeros(length(mats)*length(arcs)),
+                               :lead => Float64[],#zeros(Int, length(mats)*length(arcs)),
                                :unfulfilled => Float64[],#zeros(length(mats)*length(arcs)),
                                :reallocated => Any[])#Any[missing for i in 1:length(mats)*length(arcs)])
     shipments = DataFrame(:arc => [],
                           :material => [],
                           :amount => Float64[],
-                          :lead => Int[])
+                          :lead => Float64[])
     production = DataFrame(:arc => [],
                            :material => [],
                            :amount => Float64[],
-                           :lead => Int[])
+                           :lead => Float64[])
     demand = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(mrkts)),
                        :node => Int[],#repeat(mrkts, inner = length(mats)),
                        :material => Any[],#repeat(mats, outer = length(mrkts)),
                        :demand => Float64[],#zeros(length(mats)*length(mrkts)),
-                       :sale => Float64[],#zeros(length(mats)*length(mrkts)),
-                       :unfulfilled => Float64[],#zeros(length(mats)*length(mrkts)),
-                       :backlog => Float64[])#zeros(length(mats)*length(mrkts)))
+                       :sold => Float64[],#zeros(length(mats)*length(mrkts)),
+                       :unfulfilled => Float64[])#zeros(length(mats)*length(mrkts)))
     profit = DataFrame(:period => Int[],#zeros(Int, length(nodes)),
                        :value => Float64[],#zeros(length(nodes)),
                        :node => Int[])#nodes)
     reward = 0
     period = 0
     num_periods = num_periods
-    env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_pipeline, inv_position,
+    options = Dict(:backlog => backlog, :reallocate => reallocate, 
+                   :evaluate_profit => evaluate_profit,
+                   :capacitated_inventory => capacitated_inventory)
+    env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_level, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
-                    profit, reward, period, num_periods, discount, backlog, reallocate, seed)
+                    profit, reward, period, num_periods, discount, options, seed)
 
     Random.seed!(env)
 
     return env
 end
 
-Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
+"""
+    reset!(env::SupplyChainEnv)
 
+Reset a `SupplyChainEnv` (empty all logging dataframes and set simulation time to 0).
+"""
 function reset!(env::SupplyChainEnv)
     env.period = 0
     env.reward = 0
@@ -169,4 +157,12 @@ function reset!(env::SupplyChainEnv)
     Random.seed!(env)
 end
 
+"""
+    is_terminated(env::SupplyChainEnv)
+
+Check if a simulation has terminated (i.e., has reached the maximum number of periods).
+"""
 is_terminated(env::SupplyChainEnv) = env.period == env.num_periods
+
+"Set the random seed for a simulation."
+Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
