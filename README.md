@@ -2,6 +2,8 @@
 
 *Discrete-time simulation environment for Inventory Management in Supply Networks.*
 
+[![DOI](https://zenodo.org/badge/357413023.svg)](https://zenodo.org/badge/latestdoi/357413023)
+
 ![](logo.png)
 
 ## Table of Contents
