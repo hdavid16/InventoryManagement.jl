@@ -74,8 +74,8 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
             pol_type = policy_type isa Dict ? policy_type[n] : policy_type
             if pol_type == :rQ #rQ policy
                 reorder = max(param2[n,p], MOQ)
-            elseif pol_type == :sS && state <= param2[n,p] #sS policy
-                reorder = max(param2[n,p] - state, MOQ)
+            elseif pol_type == :sS #sS policy
+                reorder = state < param2[n,p] ? max(param2[n,p] - state, MOQ) : 0
             else
                 @assert pol_type in [:rQ, :sS] "The policy type must be either `:rQ` or `:sS`."
             end
