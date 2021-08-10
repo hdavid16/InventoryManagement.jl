@@ -106,6 +106,5 @@ function simulate_policy!(env::SupplyChainEnv, args...)
     for t in 1:env.num_periods
         action = reorder_policy(env, args...)
         (env)(action)
-        mod(env.period,24*7) == 0 && println("Week $(env.period/24/7)")
     end
 end
