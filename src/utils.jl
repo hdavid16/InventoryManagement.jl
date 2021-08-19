@@ -35,7 +35,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :demand_sequence]
     plant_keys = [:production_cost, :production_time, :production_capacity]
-    arc_keys = [:sales_price, :transportation_cost, :lead_time]
+    arc_keys = [:sales_price, :transportation_cost, :pipeline_holding_cost, :lead_time]
     
     for n in nodes, key in all_keys
         !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified

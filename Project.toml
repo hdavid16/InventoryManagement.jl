@@ -1,7 +1,7 @@
 name = "InventoryManagement"
 uuid = "2ad91f63-398d-4379-af6a-5a85689656d5"
 authors = ["hdavid16 <hperez16@gmail.com> and contributors"]
-version = "0.1.26"
+version = "0.1.27"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"

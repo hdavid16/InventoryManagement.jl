@@ -477,15 +477,17 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
             for pred in inneighbors(x.network, n)
                 price = get_prop(x.network, pred, n, :sales_price)[p]
                 trans_cost = get_prop(x.network, pred, n, :transportation_cost)[p]
-                if price > 0 #pay purchase of inventory
+                pipe_holding_cost = get_prop(x.network, pred, n, :pipeline_holding_cost)[p]
+                if price > 0 || trans_cost > 0 #pay purchase of inventory and transportation cost (assume it is paid to a third party)
                     purchased = filter([:arc, :material] => (j1, j2) -> j1 == (pred, n) && j2 == p, arrivals, view=true).amount
                     if !isempty(purchased)
                         profit -= purchased[1] * price
+                        profit -= purchased[1] * trans_cost
                     end
                 end
-                if trans_cost > 0 #pay transportation (pipeline hoding) cost (assume it is paid to a third party)
+                if pipe_holding_cost > 0 #pay pipeline holding cost (paid for in-transit inventory in the current period)
                     intransit = pipeline_grp[(arc = (pred, n), material = p)].level[1]
-                    profit -= intransit * trans_cost
+                    profit -= intransit * pipe_holding_cost
                 end
             end
             #receive payment for delivered inventory
