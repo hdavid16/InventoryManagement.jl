@@ -61,6 +61,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     if x.options[:evaluate_profit]
         #calculate profit at each node
         calculate_profit!(x, arrivals)
+        # calculate_profit2!(x, arrivals)
         #update reward (current profit). Should be revised for RL
         x.reward = sum(filter(:period => j -> j == x.period, x.profit, view=true).value)
     end
@@ -499,6 +500,100 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
                         profit += sold[1] * price
                     end
                 end
+            end
+        end
+
+        #discounted profit
+        push!(x.profit, [x.period, 1/(1+x.discount)^x.period * profit, n])
+    end
+end
+
+function calculate_profit2!(x::SupplyChainEnv, arrivals::DataFrame)
+    #filter data
+    on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inv_on_hand, view=true) #on_hand inventory 
+    onhand_grp = groupby(on_hand_df, [:node, :material])
+    orders_df = filter(:period => i -> i == x.period, x.replenishments, view=true) #replenishment orders
+    orders_grp = groupby(orders_df, :material)
+    sales_df = filter(:period => j -> j == x.period, x.demand, view=true) #sales at markets
+    sales_grp = groupby(sales_df, [:node, :material])
+    pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories
+    pipeline_grp = groupby(pipeline_df, [:arc, :material])
+
+    #evaluate edge transactions
+    edge_sales = Dict((e,p) => 0. for e in edges(x.network), p in x.materials)
+    edge_costs = Dict((e,p) => 0. for e in edges(x.network), p in x.materials)
+    for e in edges(x.network), p in x.materials
+        price = get_prop(x.network, e, :sales_price)[p]
+        trans_cost = get_prop(x.network, e, :transportation_cost)[p]
+        pipe_holding_cost = get_prop(x.network, e, :pipeline_holding_cost)[p]
+        sale_amount = purchased = filter([:arc, :material] => (j1, j2) -> j1 == (e.src, e.dst) && j2 == p, arrivals, view=true).amount
+        intransit_amount = pipeline_grp[(arc = (e.src, e.dst), material = p)].level[1]
+        if !isempty(sale_amount)
+            edge_sales[e,p] += sale_amount[1] * price #price for material sold
+            edge_costs[e,p] += sale_amount[1] * trans_cost #fixed transportation cost for material sold
+        end
+        edge_costs[e,p] += intransit_amount * pipe_holding_cost #variable transportation cost for material in transit
+    end
+
+    #evaluate node profit
+    for n in vertices(x.network)
+        profit = 0 #initialize node profit
+        for p in x.materials
+            #get costs
+            #holding cost
+            hold_cost = get_prop(x.network, n, :holding_cost)[p]
+            if hold_cost > 0
+                onhand = onhand_grp[(node = n, material = p)].level
+                if !isempty(onhand)
+                    profit -= hold_cost * onhand[1]
+                end
+            end
+            #production cost
+            if n in x.producers
+                prod_cost = get_prop(x.network, n, :production_cost)[p]
+                if prod_cost > 0
+                    produced = sum(filter([:arc] => j -> j[1] == n, orders_grp[(material = p,)], view=true).accepted)
+                    profit -= prod_cost * produced
+                end
+            #sales profit at markets (and penalize for unfulfilled demand)
+            elseif n in x.markets
+                sales_price = get_prop(x.network, n, :sales_price)[p]
+                dmnd_penalty = get_prop(x.network, n, :demand_penalty)[p]
+                if sales_price > 0 || dmnd_penalty > 0
+                    sold, unfilled = sales_grp[(node = n, material = p)][1, [:sold, :unfulfilled]]
+                    profit += sales_price * sold
+                    profit -= dmnd_penalty * unfilled
+                end
+            end
+            #pay suppliers for received inventory and pay transportation cost
+            for pred in inneighbors(x.network, n)
+                profit -= edge_sales[Edge(pred,n), p] #pay supplier
+                profit -= edge_costs[Edge(pred,n), p] #pay transportation costs
+                # price = get_prop(x.network, pred, n, :sales_price)[p]
+                # trans_cost = get_prop(x.network, pred, n, :transportation_cost)[p]
+                # pipe_holding_cost = get_prop(x.network, pred, n, :pipeline_holding_cost)[p]
+                # if price > 0 || trans_cost > 0 #pay purchase of inventory and transportation cost (assume it is paid to a third party)
+                #     purchased = filter([:arc, :material] => (j1, j2) -> j1 == (pred, n) && j2 == p, arrivals, view=true).amount
+                #     if !isempty(purchased)
+                #         profit -= purchased[1] * price
+                #         profit -= purchased[1] * trans_cost
+                #     end
+                # end
+                # if pipe_holding_cost > 0 #pay pipeline holding cost (paid for in-transit inventory in the current period)
+                #     intransit = pipeline_grp[(arc = (pred, n), material = p)].level[1]
+                #     profit -= intransit * pipe_holding_cost
+                # end
+            end
+            #receive payment for delivered inventory
+            for succ in outneighbors(x.network, n)
+                profit += edge_sales[Edge(n,succ), p]
+                # price = get_prop(x.network, n, succ, :sales_price)[p]
+                # if price > 0 #receive payment for delivered inventory
+                #     sold = filter([:arc, :material] => (j1, j2) -> j1 == (n, succ) && j2 == p, arrivals, view=true).amount
+                #     if !isempty(sold)
+                #         profit += sold[1] * price
+                #     end
+                # end
             end
         end
 

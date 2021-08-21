@@ -42,18 +42,16 @@ set_props!(net, 2, 3, Dict(:sales_price => Dict(:A => 1),
                           :transportation_cost => Dict(:A => 0.1),
                           :lead_time => Dict(:A => Poisson(7))))
 
-#create environment
-num_periods = 100
-env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
-
 #define reorder policy parameters
 policy = :sS #(s, S) policy
 freq = 1 #continuous review
 s = Dict((3,:A) => 50) #lower bound on inventory
 S = Dict((3,:A) => 100) #base stock level
 
-#run simulation with reorder policy
-simulate_policy!(env, s, S, policy, freq)
+#create environment and run simulation with reorder policy
+num_periods = 100
+env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
+@elapsed simulate_policy!(env, s, S, policy, freq)
 
 #make plots
 using DataFrames, StatsPlots
