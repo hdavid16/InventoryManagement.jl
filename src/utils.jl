@@ -47,7 +47,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     for n in nodes, key in all_keys
         !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
         for p in mats
-            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
+            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set default values
                 if key == :inventory_capacity #default is uncapacitated inventory
                     network.vprops[n][key][p] = Inf
                 else #others default to zero
@@ -61,7 +61,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     for n in mrkts, key in market_keys
         !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
         for p in mats
-            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
+            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set default values
                 if key == :demand_distribution #zero demand for that material
                     tmp = Dict(p => [0])
                     network.vprops[n][key] = merge(network.vprops[n][key], tmp)
