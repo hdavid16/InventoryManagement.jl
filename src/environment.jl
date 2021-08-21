@@ -66,23 +66,26 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                         discount::Float64=0.0, backlog::Bool=false,
                         reallocate::Bool=false, evaluate_profit::Bool=true,
                         capacitated_inventory::Bool=true, seed::Int=0)
+    #copy network (avoids issues when changing say num_periods after the Env was already created)
+    net = copy(network)
     #get main nodes
-    nodes = vertices(network)
+    nodes = vertices(net)
     #get main edges
-    arcs = [(e.src,e.dst) for e in edges(network)]
+    arcs = [(e.src,e.dst) for e in edges(net)]
     #get end distributors, producers, and distribution centers
-    mrkts = [n for n in nodes if isempty(outneighbors(network, n))] #markets must be sink nodes
-    plants = [n for n in nodes if :production_capacity in keys(network.vprops[n])]
+    mrkts = [n for n in nodes if isempty(outneighbors(net, n))] #markets must be sink nodes
+    plants = [n for n in nodes if :production_capacity in keys(net.vprops[n])]
     dcs = setdiff(nodes, mrkts, plants)
     #get materials
-    mats = get_prop(network, :materials)
-    bom = get_prop(network, :bill_of_materials)
+    mats = get_prop(net, :materials)
     #check inputs
-    check_inputs(network, nodes, arcs, mrkts, plants, mats, bom, num_periods)
+    check_inputs(net, nodes, arcs, mrkts, plants, mats, num_periods)
+    #get bill of materials
+    bom = get_prop(net, :bill_of_materials)
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
     for n in nodes, p in mats
-        init_inv = get_prop(network, n, :initial_inventory)
+        init_inv = get_prop(net, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p], 0))
     end
     inv_pipeline = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
@@ -122,7 +125,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     options = Dict(:backlog => backlog, :reallocate => reallocate, 
                    :evaluate_profit => evaluate_profit,
                    :capacitated_inventory => capacitated_inventory)
-    env = SupplyChainEnv(network, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_level, inv_pipeline, inv_position,
+    env = SupplyChainEnv(net, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_level, inv_pipeline, inv_position,
                     replenishments, shipments, production, demand,
                     profit, reward, period, num_periods, discount, options, seed)
 

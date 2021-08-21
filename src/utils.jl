@@ -14,18 +14,25 @@ end
 
 """
     check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
-                    mrkts::Vector, plants::Vector, mats::Vector, bom::Array,
-                    num_periods::Int)
+                    mrkts::Vector, plants::Vector, mats::Vector, num_periods::Int)
 
 Check inputs when creating a `SupplyChainEnv`.
 """
 function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
-                    mrkts::Vector, plants::Vector, mats::Vector, bom::Array,
-                    num_periods::Int)
+                    mrkts::Vector, plants::Vector, mats::Vector, num_periods::Int)
     truncate_flag = false
     roundoff_flag1 = false
     roundoff_flag2 = false
 
+    #bill of materials
+    if :bill_of_materials in keys(network.gprops)
+        bom = get_prop(network, :bill_of_materials)
+    elseif isempty(plants)
+        bom = zeros(Int, length(mats), length(mats))
+        set_prop!(network, :bill_of_materials, bom)
+    else
+        @assert :bill_of_materials in keys(network.gprops) "Bill of materials is missing."
+    end
     if bom != [0] #if [0] then single product, no bom
         @assert typeof(bom) <: Matrix{T} where T <: Real "Bill of materials must be a matrix of real numbers."
         @assert size(bom)[1] == size(bom)[2] "Bill of materials must be a square matrix."
@@ -41,7 +48,11 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
-                network.vprops[n][key][p] = 0.
+                if key == :inventory_capacity #default is uncapacitated inventory
+                    network.vprops[n][key][p] = Inf
+                else #others default to zero
+                    network.vprops[n][key][p] = 0
+                end
             end
             @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p at node $n must be non-negative."
         end
@@ -51,13 +62,15 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
-                if key == :demand_distribution
+                if key == :demand_distribution #zero demand for that material
                     tmp = Dict(p => [0])
                     network.vprops[n][key] = merge(network.vprops[n][key], tmp)
-                elseif key == :demand_sequence
+                elseif key == :demand_sequence #zeros demand sequence for that material
                     network.vprops[n][key][p] = zeros(num_periods)
-                else
-                    network.vprops[n][key][p] = 0.
+                elseif key == :demand_frequency #demand at every period (default)
+                    network.vprops[n][key][p] = 1
+                else #others default to 0
+                    network.vprops[n][key][p] = 0
                 end
             end
             if key == :demand_frequency
