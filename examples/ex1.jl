@@ -51,7 +51,7 @@ S = Dict((3,:A) => 100) #base stock level
 #create environment and run simulation with reorder policy
 num_periods = 100
 env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
-@elapsed simulate_policy!(env, s, S, policy, freq)
+simulate_policy!(env, s, S, policy, freq)
 
 #make plots
 using DataFrames, StatsPlots
