@@ -74,7 +74,8 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     arcs = [(e.src,e.dst) for e in edges(net)]
     #get end distributors, producers, and distribution centers
     mrkts = [n for n in nodes if isempty(outneighbors(net, n))] #markets must be sink nodes
-    plants = [n for n in nodes if :production_capacity in keys(net.vprops[n])]
+    plant_keys = [:production_cost, :production_time, :production_capacity, :production_rate] #keys to identify a plant (producer)
+    plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(net.vprops[n])))]
     dcs = setdiff(nodes, mrkts, plants)
     #get materials
     mats = get_prop(net, :materials)
