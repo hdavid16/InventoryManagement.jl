@@ -1,9 +1,13 @@
 module InventoryManagement
 
 using DataFrames
-using LightGraphs, MetaGraphs
-using Distributions, Random
+using Reexport
+using Random
 using IntervalSets
+import Distributions: Sampleable, truncated
+
+@reexport using LightGraphs
+@reexport using MetaGraphs
 
 include("environment.jl")
 include("utils.jl")
