@@ -124,7 +124,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
             if key == :lead_time
                 lt = network.eprops[Edge(a...)][key][p]
                 @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
-                lt isa Array && @assert length(lt) == 1 && lt[1] >= 0 "Parameter $key for material $p on arc $a cannot be negative and must be single-valued."
+                lt isa Array && @assert length(lt) == 1 && lt[1] >= 0 "Parameter $key for material $p on arc $a cannot be negative and must be a singleton or an univariate distribution."
                 if minimum(lt) < 0 
                     tmp = Dict(p => truncated(lt, 0, Inf))
                     network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
