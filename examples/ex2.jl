@@ -1,4 +1,4 @@
-using LightGraphs, MetaGraphs, Distributions
+using Distributions
 using InventoryManagement
 
 #define network connectivity
