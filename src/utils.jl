@@ -95,8 +95,12 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     for n in plants, key in plant_keys
         !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
         for p in mats
-            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its value to 0
-                network.vprops[n][key][p] = 0.
+            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its default value
+                if key == :production_capacity #default is uncapacitated production
+                    network.vprops[n][key][p] = Inf
+                else #others default to zero
+                    network.vprops[n][key][p] = 0
+                end
             end
             param = network.vprops[n][key][p]
             @assert param >= 0 "Parameter $key for material $p at node $n must be non-negative."
