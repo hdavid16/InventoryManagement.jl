@@ -4,7 +4,7 @@ using DataFrames
 using Reexport
 using Random
 using IntervalSets
-import Distributions: Sampleable, truncated
+using Distributions
 
 @reexport using LightGraphs
 @reexport using MetaGraphs
