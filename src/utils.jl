@@ -157,6 +157,23 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
 end
 
 """
+    identify_echelons(network::MetaDiGraph, n::Int)
+
+Identify all `network` successors to node `n`.
+"""
+function identify_echelons(network::MetaDiGraph, n::Int)
+    #find all successors to node n
+    sink_nodes = [i for i in vertices(network) if isempty(outneighbors(network, i))]
+    echelon_nodes = [] #initialize list of echelon nodes
+    for sink in sink_nodes #find all nodes between n and each sink node
+        echelon = yen_k_shortest_paths(network, n, sink, weights(network), typemax(Int)).paths
+        union!(echelon_nodes, echelon...) #remove duplicates
+    end
+
+    return echelon_nodes
+end
+
+"""
     service_measures(env::SupplyChainEnv)
 
 Calculate mean service level and fill rate for each node and each material in the simulation.

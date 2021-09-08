@@ -8,12 +8,14 @@ abstract type AbstractEnv end
 - `markets::Vector`: Vector of market nodes where demand occurs.
 - `producers::Vector`: Vector of producer nodes where material transformation occurs.
 - `distributors::Vector`: Vector of distribution centers (excludes market nodes).
+- `echelons::Dict`: Dictionary with Vector of nodes downstream of each node in the network (including that node).
 - `materials::Vector`: Vector with the names of all materials in the system.
 - `bill_of_materials::Array`: Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; row with positive value is a co-product, row with negative value is a input (reactant).
 - `inv_on_hand::DataFrame`: Timeseries with on hand inventories @ each node.
 - `inv_level::DataFrame`: Timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
 - `inv_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
 - `inv_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
+- `ech_position::DataFrame`: Timeseries with echelon inventory position @ each node.
 - `replenishments::DataFrame`: Timeseries with replenishment orders placed on each arc.
 - `shipments::DataFrame`: Temp table with active shipments and time to arrival on each arc.
 - `production::DataFrame`: Temp table with active material production commited to an arc and time to ship.
@@ -35,12 +37,14 @@ mutable struct SupplyChainEnv <: AbstractEnv
     markets::Vector
     producers::Vector
     distributors::Vector
+    echelons::Dict
     materials::Vector
     bill_of_materials::Array
     inv_on_hand::DataFrame
     inv_level::DataFrame
     inv_pipeline::DataFrame
     inv_position::DataFrame
+    ech_position::DataFrame
     replenishments::DataFrame
     shipments::DataFrame
     production::DataFrame
@@ -70,6 +74,8 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     net = copy(network)
     #get main nodes
     nodes = vertices(net)
+    #get nodes in each echelon
+    echelons = Dict(n => identify_echelons(net, n) for n in nodes)
     #get main edges
     arcs = [(e.src,e.dst) for e in edges(net)]
     #get end distributors, producers, and distribution centers
@@ -95,6 +101,11 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                              :level => zeros(length(mats)*length(arcs)))
     inv_position = select(inv_on_hand, [:period, :node, :material, :level])
     inv_level = copy(inv_position)
+    ech_position = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[])
+    for n in nodes, p in mats
+        ech_pos = sum(filter([:node, :material] => (i1, i2) -> i1 in echelons[n] && i2 == p, inv_position).level)
+        push!(ech_position, (0, n, p, ech_pos))
+    end
     replenishments = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(arcs)),
                                :arc => Tuple[],#repeat(arcs, inner = length(mats)),
                                :material => Any[],#repeat(mats, outer = length(arcs)),
@@ -126,9 +137,12 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     options = Dict(:backlog => backlog, :reallocate => reallocate, 
                    :evaluate_profit => evaluate_profit,
                    :capacitated_inventory => capacitated_inventory)
-    env = SupplyChainEnv(net, mrkts, plants, dcs, mats, bom, inv_on_hand, inv_level, inv_pipeline, inv_position,
-                    replenishments, shipments, production, demand,
-                    profit, reward, period, num_periods, discount, options, seed)
+    env = SupplyChainEnv(
+        net, mrkts, plants, dcs, echelons, mats, bom, 
+        inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, 
+        replenishments, shipments, production, demand,
+        profit, reward, period, num_periods, discount, options, seed
+    )
 
     Random.seed!(env)
 
@@ -146,6 +160,7 @@ function reset!(env::SupplyChainEnv)
     filter!(i -> i.period == 0, env.inv_on_hand)
     filter!(i -> i.period == 0, env.inv_pipeline)
     filter!(i -> i.period == 0, env.inv_position)
+    filter!(i -> i.period == 0, env.ech_position)
     filter!(i -> i.period == 0, env.replenishments)
     filter!(i -> i.period == 0, env.demand)
     filter!(i -> i.period == 0, env.profit)

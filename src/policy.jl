@@ -15,7 +15,8 @@ Apply an inventory policy to specify the replinishment orders for each material
 - `review_period::Union{Int, StepRange, Vector, Dict}`: number of periods between each inventory review (Default = `1` for continuous review.). If a `StepRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `StepRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
 - `min_order_qty::Union{Real, Dict}`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
 """
-function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
+function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict;
+                        policy_variable::Union{Dict,Symbol} = :inv_position,
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, StepRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0)
@@ -54,8 +55,10 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
     end
 
     #filter data for policy
-    state_df = filter(:period => j -> j == env.period, env.inv_position, view=true) #inventory position
-    state_grp = groupby(state_df, [:node, :material]) #group by node and material
+    state1_df = filter(:period => j -> j == env.period, env.inv_position, view=true) #inventory position
+    state1_grp = groupby(state1_df, [:node, :material]) #group by node and material
+    state2_df = filter(:period => j -> j == env.period, env.ech_position, view=true) #inventory position
+    state2_grp = groupby(state2_df, [:node, :material]) #group by node and material
 
     #create action matrix
     action = zeros(length(mats), length(arcs)) #initialize action matrix
@@ -75,7 +78,14 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict,
         #initialize reorder quantity
         reorder = 0
         #check if reorder is triggered & set reorder policy
-        state = state_grp[(node = n, material = p)].level[1]
+        pol_var = policy_variable isa Dict ? policy_variable[n] : policy_variable
+        if pol_var == :inv_position
+            state = state1_grp[(node = n, material = p)].level[1]
+        elseif pol_var == :ech_position
+            state = state2_grp[(node = n, material = p)].level[1]
+        else
+            @assert pol_var in [:inv_position, :ech_position] "Policy variable must be either `:inv_position` or `:ech_position`."
+        end
         if state <= param1[n,p]
             pol_type = policy_type isa Dict ? policy_type[n] : policy_type
             if pol_type == :rQ #rQ policy
@@ -102,9 +112,9 @@ end
 Step through a simulation using a specified reorder policy. `args` are the
 arguments that are passed to the `reorder_policy` function.
 """
-function simulate_policy!(env::SupplyChainEnv, args...)
+function simulate_policy!(env::SupplyChainEnv, args...; kwargs...)
     for t in 1:env.num_periods
-        action = reorder_policy(env, args...)
+        action = reorder_policy(env, args...; kwargs...)
         (env)(action)
     end
 end

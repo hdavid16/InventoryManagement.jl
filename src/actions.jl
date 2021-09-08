@@ -55,8 +55,8 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #markets open and demand occurs
     simulate_markets!(x)
 
-    #update inventory positions at each node
-    update_positions!(x)
+    #update inventories at each node and echelon
+    update_inventories!(x)
 
     if x.options[:evaluate_profit]
         #calculate profit at each node
@@ -359,11 +359,11 @@ end
 
 
 """
-    update_positions!(x::SupplyChainEnv)
+    update_inventories!(x::SupplyChainEnv)
 
 Update inventory position and inventory level for all materials and nodes.
 """
-function update_positions!(x::SupplyChainEnv)
+function update_inventories!(x::SupplyChainEnv)
     #filter data
     on_hand_df = filter(:period => j -> j == x.period, x.inv_on_hand, view=true) #on_hand inventory at node
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
@@ -374,6 +374,14 @@ function update_positions!(x::SupplyChainEnv)
     orders_df = filter([:period, :reallocated] => (i1, i2) -> i1 == x.period && ismissing(i2), x.replenishments, view=true) #replenishment orders from current period
     orders_grp = groupby(orders_df, :material) #group by material
 
+    #initialize echelon inventory positions
+    for n in vertices(x.network), p in x.materials
+        push!(x.ech_position, [x.period, n, p, 0])
+    end
+    ech_df = filter(:period => j -> j == x.period, x.ech_position, view=true) #echelon position at each node
+    ech_grp = groupby(ech_df, [:node, :material]) #group by material
+    
+    #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network), p in x.materials
         making = reduce(+,filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == p, x.production, view=true).amount, init=0) #commited production order
         upstream = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = p,)], view=true).level) #in-transit inventory
@@ -388,8 +396,19 @@ function update_positions!(x::SupplyChainEnv)
             end
             backorder = sum(filter(:arc => i -> i[end] == n, orders_grp[(material = p,)], view=true).unfulfilled)
         end
-        push!(x.inv_level, [x.period, n, p, onhand - backlog]) #update inventory
-        push!(x.inv_position, [x.period, n, p, onhand + making + upstream + backorder - backlog]) #update inventory
+        #update inventory
+        push!(x.inv_level, [x.period, n, p, onhand - backlog]) 
+        #update inventory
+        push!(x.inv_position, [x.period, n, p, onhand + making + upstream + backorder - backlog]) 
+        #update echelons
+        #identify which echelons have been affected and add to these
+        for ech in findall(i -> n in i, x.echelons)
+            if n in x.markets #backlog is only added for market nodes
+                ech_grp[(node = ech, material = p)].level[1] += onhand + making + upstream + backorder - backlog
+            else
+                ech_grp[(node = ech, material = p)].level[1] += onhand + making + upstream + backorder
+            end
+        end
     end
 end
 
