@@ -17,7 +17,7 @@ DataFrames = "1"
 Distributions = "0.25"
 IntervalSets = "0.5"
 LightGraphs = "1.3"
-MetaGraphs = "0.6"
+MetaGraphs = "0.6, 0.7"
 Reexport = "1.2"
 julia = "1"
 
