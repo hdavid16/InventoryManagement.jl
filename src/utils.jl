@@ -49,7 +49,8 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set default values
                 if key == :inventory_capacity #default is uncapacitated inventory
-                    network.vprops[n][key][p] = Inf
+                    tmp = Dict(p => Inf)
+                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
                 else #others default to zero
                     network.vprops[n][key][p] = 0
                 end
@@ -207,4 +208,51 @@ function service_measures(env::SupplyChainEnv)
     CSL = vcat(market_CSL, node_CSL, cols = :union) #CSL
     
     return FR, CSL
+end
+
+"""
+    material_conversion(net::MetaDiGraph, prods::Vector)
+
+Generate a material graph where the weights are the stoichiometry. 
+Also generate a dictionary mapping the amount of each material consumed when one unit of product is procured.
+
+NOTE: assumes that byproducts don't have their own primary pathways
+      assumes that byproducts are only made in one of the pathways
+"""
+function material_conversion(net::MetaDiGraph, prods::Vector)
+    #get materials
+    mats = get_prop(net, :materials)
+    num_mats = length(mats) #number of materials
+    #expanded bom
+    bom = get_prop(net, :bill_of_materials)
+    bom_exp = copy(bom) 
+    bom_exp[bom .> 0] .= 0 #replace positive numbers (coproduction) with zero
+    coprod = findall(i -> i > 0, bom) #find indices where there is coproduction
+    for idx in coprod #loop through indices and create columns for coproduction
+        coprod_col, copy_col = idx.I
+        bom_exp[:, coprod_col] = bom_exp[:, copy_col]
+    end
+    #generate material graph (and connect nodes)
+    mat_graph = MetaDiGraph(num_mats)
+    for i in 1:num_mats, j in 1:num_mats
+        if bom_exp[i,j] < 0 
+            add_edge!(mat_graph, i, j, :weight, bom_exp[i,j])
+        end
+    end
+    #create conversion dictionary
+    mat_conv = Dict()
+    for m in mats, p in prods
+        if m != p
+            i = findfirst(x -> x == m, mats)
+            j = findfirst(x -> x == p, mats)
+            mat_paths = yen_k_shortest_paths(mat_graph, i, j, weights(mat_graph), 100).paths
+            stoich = 0
+            for arr in mat_paths
+                stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
+            end
+            mat_conv[(m, p)] = -abs(stoich)
+        end
+    end
+
+    return mat_graph, mat_conv
 end

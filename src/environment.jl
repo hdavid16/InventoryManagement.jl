@@ -10,6 +10,7 @@ abstract type AbstractEnv end
 - `distributors::Vector`: Vector of distribution centers (excludes market nodes).
 - `echelons::Dict`: Dictionary with Vector of nodes downstream of each node in the network (including that node).
 - `materials::Vector`: Vector with the names of all materials in the system.
+- `products::Vector`: Vector with the names of all final products in the system.
 - `bill_of_materials::Array`: Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; row with positive value is a co-product, row with negative value is a input (reactant).
 - `inv_on_hand::DataFrame`: Timeseries with on hand inventories @ each node.
 - `inv_level::DataFrame`: Timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
@@ -39,6 +40,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     distributors::Vector
     echelons::Dict
     materials::Vector
+    products::Vector
     bill_of_materials::Array
     inv_on_hand::DataFrame
     inv_level::DataFrame
@@ -87,10 +89,14 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     dcs = setdiff(nodes, plants, sinks)
     #get materials
     mats = get_prop(net, :materials)
+    prods = union([findall(i -> !iszero(i), get_prop(net,n,:demand_distribution)) for n in mrkts]...)
     #check inputs
     check_inputs(net, nodes, arcs, mrkts, plants, mats, num_periods)
     #get bill of materials
     bom = get_prop(net, :bill_of_materials)
+    #get material conversion to products
+    _, conversion_dict = material_conversion(net, prods)
+    set_prop!(net, :conversion_dictionary, conversion_dict)
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
     for n in nodes, p in mats
@@ -105,8 +111,10 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     inv_level = copy(inv_position)
     ech_position = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[])
     for n in nodes, p in mats
-        ech_pos = sum(filter([:node, :material] => (i1, i2) -> i1 in echelons[n] && i2 == p, inv_position).level)
-        push!(ech_position, (0, n, p, ech_pos))
+        if get_prop(net, n, :inventory_capacity)[p] > 0 #only update if that node can store that material
+            ech_pos = sum(filter([:node, :material] => (i1, i2) -> i1 in echelons[n] && i2 == p, inv_position).level)
+            push!(ech_position, (0, n, p, ech_pos))
+        end
     end
     replenishments = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(arcs)),
                                :arc => Tuple[],#repeat(arcs, inner = length(mats)),
@@ -140,7 +148,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
                    :evaluate_profit => evaluate_profit,
                    :capacitated_inventory => capacitated_inventory)
     env = SupplyChainEnv(
-        net, mrkts, plants, dcs, echelons, mats, bom, 
+        net, mrkts, plants, dcs, echelons, mats, prods, bom, 
         inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, 
         replenishments, shipments, production, demand,
         profit, reward, period, num_periods, discount, options, seed
