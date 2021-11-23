@@ -103,7 +103,7 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
     requests = copy(act)
 
     #store original production capacities (to account for commited capacity and commited inventory in next section)
-    capacities = deepcopy(Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers))
+    capacities = Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers)
 
     #sample lead times
     leads = Dict((a,p) => rand(get_prop(x.network, a, :lead_time)[p]) for a in edges(x.network), p in mats)
