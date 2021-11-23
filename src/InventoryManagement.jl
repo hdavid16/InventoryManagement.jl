@@ -6,7 +6,7 @@ using Random
 using IntervalSets
 using Distributions
 
-@reexport using LightGraphs
+@reexport using Graphs
 @reexport using MetaGraphs
 
 include("environment.jl")

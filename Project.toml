@@ -1,23 +1,23 @@
 name = "InventoryManagement"
 uuid = "2ad91f63-398d-4379-af6a-5a85689656d5"
 authors = ["hdavid16 <hperez16@gmail.com> and contributors"]
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
 IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
-LightGraphs = "093fc24a-ae57-5d10-9952-331d41423f4d"
 MetaGraphs = "626554b9-1ddb-594c-aa3c-2596fe9399a5"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 
 [compat]
-DataFrames = "1"
+DataFrames = "1.2"
 Distributions = "0.25"
 IntervalSets = "0.5"
-LightGraphs = "1.3"
-MetaGraphs = "0.6"
+Graphs = "1.4"
+MetaGraphs = "0.7"
 Reexport = "1.2"
 julia = "1"
 
