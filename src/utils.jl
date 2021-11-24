@@ -74,9 +74,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                     network.vprops[n][key][p] = 0
                 end
             end
-            if key == :demand_frequency
-                @assert 0 <= network.vprops[n][key][p] <= 1 "Parameter $key for material $p at node $n must be between 0 and 1."
-            elseif key == :demand_distribution
+            if key == :demand_distribution
                 dmnd_dst = network.vprops[n][key][p]
                 @assert rand(dmnd_dst) isa Number "Parameter $key for material $p at node $n must be a sampleable distribution or an array."
                 dmnd_dst isa Array && @assert length(dmnd_dst) == 1 && dmnd_dst[1] >= 0 "Parameter $key for material $p at node $n cannot be negative."

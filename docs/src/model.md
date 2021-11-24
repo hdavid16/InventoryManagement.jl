@@ -55,7 +55,7 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `[D]` where `D` is a `Number`.
-- `:demand_frequency::Dict`: probability that demand will occur (value between `0.0` and `1.0`) for each material (`keys`)
+- `:demand_frequency::Dict`: mean number of periods between demand arrivals for each material (`keys`)
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_frequency` parameters are ignored.
 - `:sales_price::Dict`: market sales price for each material (`keys`)
 - `:demand_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)

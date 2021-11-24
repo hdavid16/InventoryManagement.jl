@@ -442,9 +442,9 @@ function simulate_markets!(x::SupplyChainEnv)
     last_d_group = groupby(last_dmnd, [:node, :material])
     for n in x.markets, p in x.materials
         dmnd_seq = get_prop(x.network, n, :demand_sequence)[p]
-        freq = Bernoulli(get_prop(x.network, n, :demand_frequency)[p]) #demand frequency
+        dperiod = Bernoulli(get_prop(x.network, n, :demand_frequency)[p]) #demand period
         dmnd = get_prop(x.network, n, :demand_distribution)[p] #demand distribution
-        q = iszero(dmnd_seq) ? rand(freq) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
+        q = iszero(dmnd_seq) ? rand(1/dperiod) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user); probability of ordering is 1/demand period
         demand = [x.period, n, p, q, 0., 0.] #initialize demand vector to store in df
         if x.options[:backlog] && x.period > 1 #add previous backlog to the quantity requested at the market
             q += last_d_group[(node = n, material = p)].unfulfilled[1]
