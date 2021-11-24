@@ -95,7 +95,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     #get bill of materials
     bom = get_prop(net, :bill_of_materials)
     #get material conversion to products
-    _, conversion_dict = material_conversion(net, prods)
+    _, conversion_dict = material_conversion(net)
     set_prop!(net, :conversion_dictionary, conversion_dict)
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])

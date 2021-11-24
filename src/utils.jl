@@ -178,40 +178,88 @@ end
     service_measures(env::SupplyChainEnv)
 
 Calculate mean service level and fill rate for each node and each material in the simulation.
-    NOTE: Not suported when there is more than 1 supplier and reallocation is allowed.
-"""
-function service_measures(env::SupplyChainEnv)
-    #filter out times with no demand at markets
-    demand_filt = filter(i -> i.demand > 0, env.demand)
-    #calculate CSL for each material and node
-    demand_grp = groupby(demand_filt, [:node, :material])
-    market_FR_stack = combine(demand_grp, [:demand, :sold] => ((x,y) -> sum(y)/sum(x)) => :FillRate)
-    market_FR = unstack(market_FR_stack, :node, :material, :FillRate)
-    market_CSL_stack = combine(demand_grp, [:demand, :sold] => ((x,y) -> mean(x .== y)) => :CSL)
-    market_CSL = unstack(market_CSL_stack, :node, :material, :CSL)
-    # missing_cols1 = setdiff(env.materials, setdiff(names(market_CSL),"node"))
-    # insertcols!(market_CSL, [col => repeat([missing], nrow(market_CSL)) for col in missing_cols1]...)
 
-    #repeat for non market nodes
+NOTE: Not suported when there is more than 1 supplier and reallocation is allowed.
+      CSL is currently on a per-period basis, not a cycle basis
+"""
+function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRange, Vector, Dict} = 1)
+    #merge demand and replenishment tables
+    demand_filt = filter(i -> i.demand > 0, env.demand) #filter out times with no demand at markets
     replenish_filt = filter(i -> i.requested > 0, env.replenishments)
-    replenish_filt.node = map(i -> i[1], replenish_filt.arc)
-    replenish_filt.destination = map(i -> i[2], replenish_filt.arc)
-    replenish_grp = groupby(replenish_filt, [:node, :material])
-    node_FR_stack = combine(replenish_grp, [:requested, :accepted] => ((x,y) -> sum(y)/sum(x)) => :FillRate)
-    node_FR = unstack(node_FR_stack, :node, :material, :FillRate)
-    node_CSL_stack = combine(replenish_grp, [:requested, :accepted] => ((x,y) -> mean(x .== y)) => :CSL)
-    node_CSL = unstack(node_CSL_stack, :node, :material, :CSL)
-    # missing_cols2 = setdiff(env.materials, setdiff(names(node_CSL),"node"))
-    # insertcols!(node_CSL, [col => repeat([missing], nrow(node_CSL)) for col in missing_cols2]...)
-    
-    FR = vcat(market_FR, node_FR, cols = :union) #fill rate
-    CSL = vcat(market_CSL, node_CSL, cols = :union) #CSL
+    select!(replenish_filt, #convert replenishment table into same format as demand table for merging
+        :period,
+        :arc => ByRow(first) => :node,
+        :material,
+        :requested => :demand,
+        :accepted => :sold,
+        :unfulfilled
+    )
+    orders = vcat(demand_filt, replenish_filt) #merge two tables
+
+    #convert orders of products at producer nodes into orders of raw materials at those nodes
+    bom = env.bill_of_materials
+    for row in eachrow(filter(i -> i.node in env.producers, orders))
+        col = findfirst(i -> i == row.material, env.materials)
+        for id in findall(i -> i < 0, bom[:,col])
+            push!(orders, (row.period, row.node, env.materials[id], -row.demand*bom[id,col], -row.sold*bom[id,col], -row.unfulfilled*bom[id,col]))
+        end
+    end
+
+    #convert review period into proper format (dictionary by node)
+    if review_period isa Int
+        review_period = 1:review_period:env.num_periods
+    end
+    if !isa(review_period, Dict)
+        review_period = Dict((n,m) => review_period for n in vertices(env.network), m in env.materials)
+    end
+    cycle = Dict(
+        key => 
+            Dict(
+                i => 
+                    Interval{:closed, :open}(review_period[key][i],review_period[key][i+1])
+                for i in 1:length(review_period[key])-1
+            ) 
+        for key in keys(review_period)
+    )
+
+    #calculate CSL
+    orders.cycle = Any[nothing for _ in eachrow(orders)] #initialize column to store what cycle a row belongs to
+    orders_filt = filter(
+        i -> !isnothing(i.cycle),
+        combine(
+            groupby(orders, [:node, :material]),
+            [:period,:node,:material] => ByRow((t,n,m) -> findfirst(x -> t in x, cycle[n,m])) => :cycle,
+            :unfulfilled
+        )
+    )
+    stockouts = combine(
+        groupby(orders_filt, [:cycle, :node, :material]), 
+        :unfulfilled => !iszero ∘ sum => :stockout #count the if a stockout occurs in each period
+    )
+    CSL_stack = combine(
+        groupby(stockouts, [:node, :material]), 
+        :stockout => (x -> 1 - mean(x)) => :CycleServiceLevel
+    )
+    CSL = sort(
+        unstack(CSL_stack, :node, :material, :CycleServiceLevel), 
+        :node
+    )
+
+    #calculate FR
+    FR_stack = combine(
+        groupby(orders, [:node, :material]), 
+        [:demand, :sold] => ((x,y) -> sum(y)/sum(x)) => :FillRate
+    )
+    FR = sort(
+        unstack(FR_stack, :node, :material, :FillRate), 
+        :node
+    )
     
     return FR, CSL
 end
 
 """
-    material_conversion(net::MetaDiGraph, prods::Vector)
+    material_conversion(net::MetaDiGraph)
 
 Generate a material graph where the weights are the stoichiometry. 
 Also generate a dictionary mapping the amount of each material consumed when one unit of product is procured.
@@ -219,7 +267,7 @@ Also generate a dictionary mapping the amount of each material consumed when one
 NOTE: assumes that byproducts don't have their own primary pathways
       assumes that byproducts are only made in one of the pathways
 """
-function material_conversion(net::MetaDiGraph, prods::Vector)
+function material_conversion(net::MetaDiGraph)
     #get materials
     mats = get_prop(net, :materials)
     num_mats = length(mats) #number of materials
@@ -241,16 +289,19 @@ function material_conversion(net::MetaDiGraph, prods::Vector)
     end
     #create conversion dictionary
     mat_conv = Dict()
-    for m in mats, p in prods
+    for m in mats, p in mats
         if m != p
             i = findfirst(x -> x == m, mats)
             j = findfirst(x -> x == p, mats)
-            mat_paths = yen_k_shortest_paths(mat_graph, i, j, weights(mat_graph), 100).paths
-            stoich = 0
-            for arr in mat_paths
-                stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
+            yen_k = yen_k_shortest_paths(mat_graph, i, j, weights(mat_graph), 100)
+            if !isempty(yen_k.dists)
+                mat_paths = yen_k.paths
+                stoich = 0
+                for arr in mat_paths
+                    stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
+                end
+                mat_conv[(m, p)] = -abs(stoich)
             end
-            mat_conv[(m, p)] = -abs(stoich)
         end
     end
 
