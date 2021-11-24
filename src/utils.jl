@@ -96,7 +96,8 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         for p in mats
             if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its default value
                 if key == :production_capacity #default is uncapacitated production
-                    network.vprops[n][key][p] = Inf
+                    tmp = Dict(p => Inf)
+                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
                 else #others default to zero
                     network.vprops[n][key][p] = 0
                 end
