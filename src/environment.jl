@@ -89,7 +89,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     dcs = setdiff(nodes, plants, sinks)
     #get materials
     mats = get_prop(net, :materials)
-    prods = union([findall(i -> !iszero(i), get_prop(net,n,:demand_distribution)) for n in mrkts]...)
+    prods = union([findall(i -> i isa Sampleable || !iszero(i), get_prop(net,n,:demand_distribution)) for n in mrkts]...)
     #check inputs
     check_inputs(net, nodes, arcs, mrkts, plants, mats, num_periods)
     #get bill of materials
