@@ -110,31 +110,34 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
         end
     end
     
-    for a in arcs, key in arc_keys
-        !in(key, keys(network.eprops[Edge(a...)])) && set_prop!(network, Edge(a...), key, Dict()) #create empty params for arcs if not specified
-        for p in mats
-            if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
+    for a in arcs
+        !in(Edge(a...), keys(network.eprops)) && set_props!(network, Edge(a...), Dict(key => Dict() for key in arc_keys)) #if no metadata was stored on an arc, assume that the lead time is 0 (default value in this block)
+        for key in arc_keys
+            !in(key, keys(network.eprops[Edge(a...)])) && set_prop!(network, Edge(a...), key, Dict()) #create empty params for arcs if not specified
+            for p in mats
+                if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
+                    if key == :lead_time
+                        tmp = Dict(p => [0])
+                        network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
+                    else
+                        network.eprops[Edge(a...)][key][p] = 0.
+                    end
+                end            
                 if key == :lead_time
-                    tmp = Dict(p => [0])
-                    network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
+                    lt = network.eprops[Edge(a...)][key][p]
+                    @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
+                    lt isa Array && @assert length(lt) == 1 && lt[1] >= 0 "Parameter $key for material $p on arc $a cannot be negative and must be a singleton or an univariate distribution."
+                    if minimum(lt) < 0 
+                        tmp = Dict(p => truncated(lt, 0, Inf))
+                        network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
+                        truncate_flag = true
+                    end
+                    if lt isa Distribution{Univariate, Continuous} || (lt isa Array && mod(lt[1],1) > 0)
+                        roundoff_flag2 = true
+                    end    
                 else
-                    network.eprops[Edge(a...)][key][p] = 0.
+                    @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
                 end
-            end            
-            if key == :lead_time
-                lt = network.eprops[Edge(a...)][key][p]
-                @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
-                lt isa Array && @assert length(lt) == 1 && lt[1] >= 0 "Parameter $key for material $p on arc $a cannot be negative and must be a singleton or an univariate distribution."
-                if minimum(lt) < 0 
-                    tmp = Dict(p => truncated(lt, 0, Inf))
-                    network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
-                    truncate_flag = true
-                end
-                if lt isa Distribution{Univariate, Continuous} || (lt isa Array && mod(lt[1],1) > 0)
-                    roundoff_flag2 = true
-                end    
-            else
-                @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
             end
         end
     end
