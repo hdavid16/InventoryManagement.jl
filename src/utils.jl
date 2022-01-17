@@ -296,14 +296,11 @@ function material_conversion(net::MetaDiGraph)
             i = findfirst(x -> x == m, mats)
             j = findfirst(x -> x == p, mats)
             yen_k = yen_k_shortest_paths(mat_graph, i, j, weights(mat_graph), 100)
-            if !isempty(yen_k.dists)
-                mat_paths = yen_k.paths
-                stoich = 0
-                for arr in mat_paths
-                    stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
-                end
-                mat_conv[(m, p)] = -abs(stoich)
+            stoich = 0
+            for arr in yen_k.paths
+                stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
             end
+            mat_conv[(m, p)] = -abs(stoich)
         end
     end
 
