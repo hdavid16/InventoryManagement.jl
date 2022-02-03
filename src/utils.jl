@@ -23,6 +23,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     truncate_flag = false
     roundoff_flag1 = false
     roundoff_flag2 = false
+    replace_flag = false
 
     #bill of materials
     if :bill_of_materials in keys(network.gprops)
@@ -76,9 +77,14 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
             end
             if key == :demand_distribution
                 dmnd_dst = network.vprops[n][key][p]
+                @assert mean(dmnd_dst) >= 0 "Parameter $key for material $p at node $n cannot have a negative mean."
                 @assert rand(dmnd_dst) isa Number "Parameter $key for material $p at node $n must be a sampleable distribution or an array."
-                dmnd_dst isa Array && @assert length(dmnd_dst) == 1 && dmnd_dst[1] >= 0 "Parameter $key for material $p at node $n cannot be negative."
-                if minimum(dmnd_dst) < 0 
+                dmnd_dst isa Array && @assert length(dmnd_dst) == 1 "Parameter $key for material $p at node $n cannot be an Array with more than 1 element."
+                if iszero(std(dmnd_dst)) #will only catch Distribution with no std; std(Number) = NaN
+                    tmp = Dict(p => [mean(dmnd_dst)])
+                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
+                    replace_flag = true
+                elseif minimum(dmnd_dst) < 0 
                     tmp = Dict(p => truncated(dmnd_dst, 0, Inf))
                     network.vprops[n][key] = merge(network.vprops[n][key], tmp)
                     truncate_flag = true
@@ -125,9 +131,14 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                 end            
                 if key == :lead_time
                     lt = network.eprops[Edge(a...)][key][p]
+                    @assert mean(lt) >= 0 "Parameter $key for material $p on arc $a cannot have a negative mean."
                     @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
-                    lt isa Array && @assert length(lt) == 1 && lt[1] >= 0 "Parameter $key for material $p on arc $a cannot be negative and must be a singleton or an univariate distribution."
-                    if minimum(lt) < 0 
+                    lt isa Array && @assert length(lt) == 1 "Parameter $key for material $p on arc $a cannot be an Array with more than 1 element."
+                    if iszero(std(lt)) #will only catch Distribution since std of a singleton array is NaN
+                        tmp = Dict(p => [mean(lt)])
+                        network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
+                        replace_flag = true
+                    elseif minimum(lt) < 0 
                         tmp = Dict(p => truncated(lt, 0, Inf))
                         network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
                         truncate_flag = true
@@ -157,6 +168,7 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     truncate_flag && @warn "One or more probabilistic distributions allows negative values. The distribution(s) will be truncated to allow only positive values."
     roundoff_flag1 && @warn "One or more production times are not integer. Round-off error will occur because the simulation uses discrete time."
     roundoff_flag2 && @warn "One or more lead time distributions are not discrete. Round-off error will occur because the simulation uses discrete time."
+    replace_flag && @warn "One or more probabilistic distributions passed has zero variance. It has been replaced with its mean value."
 end
 
 """

@@ -5,6 +5,7 @@ using Reexport
 using Random
 using IntervalSets
 using Distributions
+import StatsBase: mean, std
 
 @reexport using Graphs
 @reexport using MetaGraphs
