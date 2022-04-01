@@ -13,13 +13,14 @@ function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
 end
 
 """
-    check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
+    check_inputs!(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                     mrkts::Vector, plants::Vector, mats::Vector, num_periods::Int)
 
 Check inputs when creating a `SupplyChainEnv`.
 """
-function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
+function check_inputs!(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
                     mrkts::Vector, plants::Vector, mats::Vector, num_periods::Int)
+    #initialize flags
     truncate_flag = false
     roundoff_flag1 = false
     roundoff_flag2 = false
@@ -40,135 +41,231 @@ function check_inputs(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     end
     @assert size(bom)[1] == length(mats) "The number of rows and columns in the bill of materials must be equal to the number of materials."
     
+    #run checks on the parameter inputs
+    nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
+    env_keys = map_env_keys(nodes, arcs, mrkts, plants, nonsources)
+    for obj in keys(env_keys), key in env_keys[obj]
+        !in(key, keys(props(network, obj...))) && set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
+        param_dict = get_prop(network, obj..., key)
+        for p in mats
+            #set defaults
+            if !in(p, keys(param_dict)) #if material not specified, add it to the dict and set default values
+                if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
+                    set_prop!(network, obj, key, merge(param_dict, Dict(p => Inf)))
+                elseif key in [:demand_distribution, :lead_time] #zero demand/lead_time for that material
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => [0])))
+                elseif key == :demand_sequence #zeros demand sequence for that material
+                    merge!(param_dict, Dict(p => zeros(num_periods)))
+                elseif key == :demand_frequency #demand at every period
+                    merge!(param_dict, Dict(p => 1))
+                elseif key == :supplier_priority #random ordering of supplier priority
+                    merge!(param_dict, Dict(p => inneighbors(network, obj)))
+                else #all others default to 0
+                    merge!(param_dict, Dict(p => 0.))
+                end
+            end
+            #check parameter value
+            param_dict = get_prop(network, obj..., key)
+            param = param_dict[p]
+            if key in [:demand_distribution, :lead_time]
+                #convert deterministic value to singleton
+                if param isa Number 
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => [param])))
+                end
+                param_dict = get_prop(network, obj..., key)
+                param = param_dict[p]
+                #checks
+                @assert mean(param) >= 0 "Parameter $key for material $p at $obj cannot have a negative mean."
+                @assert rand(param) isa Number "Parameter $key for material $p at $obj must be a sampleable distribution or an array."
+                param isa Array && @assert length(param) == 1 "Parameter $key for material $p at $obj cannot be an Array with more than 1 element."
+                #convert to deterministic if no variance or truncate if distribution is negative-valued
+                if iszero(std(param)) #will only catch Distribution with no std; std(Number) = NaN
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => [mean(param)])))
+                    replace_flag = true
+                elseif minimum(param) < 0 
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => truncated(param, 0, Inf))))
+                    truncate_flag = true
+                end
+                if key == :lead_time && (param isa Distribution{Univariate, Continuous} || (param isa Array && mod(param[1],1) > 0))
+                    roundoff_flag2 = true
+                end    
+            elseif key == :demand_sequence
+                @assert length(param) == num_periods "The demand sequence for material $p at node $obj must be a vector with $num_periods entries."
+            elseif key == :production_time && mod(param,1) > 0 #check for round-off error in production time
+                roundoff_flag1 = true  
+            elseif key == :supplier_priority
+                for s in param
+                    @assert s in inneighbors(network, obj) "Supplier $s is not a supplier to node $obj, but is listed in the supplier priority for that node for material $p."
+                end
+            else
+                @assert param >= 0 "Parameter $key for material $p at $obj must be non-negative."
+            end
+        end
+    end
+
+    # for n in nodes, key in all_keys
+    #     !in(key, keys(props(network, n))) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
+    #     param_dict = get_prop(network, n, key)
+    #     for p in mats
+    #         if !in(p, keys(param_dict)) #if material not specified, add it to the dict and set default values
+    #             if key == :inventory_capacity #default is uncapacitated inventory
+    #                 set_prop!(network, n, key, merge(param_dict, Dict(p => Inf)))
+    #             else #others default to zero
+    #                 merge!(param_dict, Dict(p => 0))
+    #             end
+    #         end
+    #         param = param_dict[p]
+    #         @assert param >= 0 "Parameter $key for material $p at node $n must be non-negative."
+    #     end
+    # end
+    
+    # for n in mrkts, key in market_keys
+    #     !in(key, keys(props(network, n))) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
+    #     param_dict = get_prop(network, n, key)
+    #     for p in mats
+    #         if !in(p, keys(param_dict)) #if material not specified, add it to the dict and set default values
+    #             if key == :demand_distribution #zero demand for that material
+    #                 set_prop!(network, n, key, merge(param_dict, Dict(p => [0])))
+    #             elseif key == :demand_sequence #zeros demand sequence for that material
+    #                 merge!(param_dict, Dict(p => zeros(num_periods)))
+    #             elseif key == :demand_frequency #demand at every period (default)
+    #                 merge!(param_dict, Dict(p => 1))
+    #             else #others default to 0
+    #                 merge!(param_dict, Dict(p => 0))
+    #             end
+    #         end
+    #         param = param_dict[p]
+    #         if key == :demand_distribution
+    #             if param isa Number #convert deterministic value to singleton
+    #                 set_prop!(network, n, key, merge(param_dict, Dict(p => [param])))
+    #             end
+    #             @assert mean(param) >= 0 "Parameter $key for material $p at node $n cannot have a negative mean."
+    #             @assert rand(param) isa Number "Parameter $key for material $p at node $n must be a sampleable distribution or an array."
+    #             param isa Array && @assert length(param) == 1 "Parameter $key for material $p at node $n cannot be an Array with more than 1 element."
+    #             if iszero(std(param)) #will only catch Distribution with no std; std(Number) = NaN
+    #                 set_prop!(network, n, key, merge(param_dict, Dict(p => [mean(param)])))
+    #                 replace_flag = true
+    #             elseif minimum(param) < 0 
+    #                 set_prop!(network, n, key, merge(param_dict, Dict(p => truncated(param, 0, Inf))))
+    #                 truncate_flag = true
+    #             end
+    #         elseif key == :demand_sequence
+    #             @assert length(param) == num_periods "The demand sequence for material $p at node $n must be a vector with $num_periods entries."
+    #         else
+    #             @assert param >= 0 "Parameter $key for material $p at node $n must be non-negative."
+    #         end
+    #     end
+    # end
+    
+    # for n in plants, key in plant_keys
+    #     !in(key, keys(props(network, n))) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
+    #     param_dict = get_prop(network, n, key)
+    #     for p in mats
+    #         if !in(p, keys(param_dict)) #if material not specified, add it to the dict and set its default value
+    #             if key == :production_capacity #default is uncapacitated production
+    #                 set_prop!(network, n, key, merge(param_dict, Dict(p => Inf)))
+    #             else #others default to zero
+    #                 merge!(param_dict, Dict(p => 0))
+    #             end
+    #         end
+    #         param = param_dict[p]
+    #         @assert param >= 0 "Parameter $key for material $p at node $n must be non-negative."
+    #         if key == :production_time && mod(param,1) > 0
+    #             roundoff_flag1 = true
+    #         end
+    #     end
+    # end
+    
+    # for a in arcs, key in arc_keys
+    #     !in(key, keys(props(network, a...))) && set_prop!(network, a..., key, Dict()) #create empty params for arcs if not specified
+    #     param_dict = get_prop(network, a..., key)
+    #     for p in mats
+    #         if !in(p, keys(param_dict)) #if material not specified, add it to the dict and set its value to 0
+    #             if key == :lead_time
+    #                 set_prop!(network, a..., key, merge(param_dict, Dict(p => [0])))
+    #             else
+    #                 merge!(param_dict, Dict(p => 0.))
+    #             end
+    #         end     
+    #         param = param_dict[p]       
+    #         if key == :lead_time
+    #             param = param_dict[p]
+    #             if param isa Number #convert deterministic value to singleton
+    #                 set_prop!(network, a..., key, merge(param_dict, Dict(p => [param])))
+    #             end
+    #             @assert mean(param) >= 0 "Parameter $key for material $p on arc $a cannot have a negative mean."
+    #             @assert rand(param) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
+    #             param isa Array && @assert length(param) == 1 "Parameter $key for material $p on arc $a cannot be an Array with more than 1 element."
+    #             if iszero(std(param)) #convert Distribution with no variance to a deterministic singleton with its mean (will only catch Distribution since std of a singleton array is NaN)
+    #                 set_prop!(network, a..., key, merge(param_dict, Dict(p => [mean(param)])))
+    #                 replace_flag = true
+    #             elseif minimum(param) < 0 
+    #                 set_prop!(network, a..., key, merge(param_dict, Dict(p => truncated(param, 0, Inf))))
+    #                 truncate_flag = true
+    #             end
+    #             if param isa Distribution{Univariate, Continuous} || (param isa Array && mod(param[1],1) > 0)
+    #                 roundoff_flag2 = true
+    #             end    
+    #         else
+    #             @assert param >= 0 "Parameter $key for material $p on arc $a must be non-negative."
+    #         end
+    #     end
+    # end
+    
+    # nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
+    # for n in nonsources, key in [:supplier_priority]
+    #     !in(key, keys(props(network, n))) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
+    #     param_dict = get_prop(network, n, key)
+    #     for p in mats
+    #         if !in(p, keys(param_dict)) #if material not specified, add it to the dict and add the node's predecessors
+    #             merge!(param_dict, Dict(p => inneighbors(network, n)))
+    #         end
+    #         param = param_dict[p]
+    #         for s in param
+    #             @assert s in inneighbors(network, n) "Supplier $s is not a supplier to node $n, but is listed in the supplier priority for that node for material $p."
+    #         end
+    #     end
+    # end
+
+    truncate_flag && @warn "One or more probabilistic distributions allows negative values. The distribution(s) will be truncated to allow only positive values. Note, this will shift the mean of the truncated distribution(s)."
+    roundoff_flag1 && @warn "One or more production times are not integer. Round-off error will occur because the simulation uses discrete time."
+    roundoff_flag2 && @warn "One or more lead time distributions are not discrete. Round-off error will occur because the simulation uses discrete time."
+    replace_flag && @warn "One or more probabilistic distributions passed has zero variance. It has been replaced with its mean value."
+end
+
+"""
+    map_env_keys(nodes::Vector, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
+
+Create a dictionary with the parameter keys for each node/arc in the network
+"""
+function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :demand_sequence]
     plant_keys = [:production_cost, :production_time, :production_capacity]
     arc_keys = [:sales_price, :transportation_cost, :pipeline_holding_cost, :lead_time]
-    
-    for n in nodes, key in all_keys
-        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
-        for p in mats
-            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set default values
-                if key == :inventory_capacity #default is uncapacitated inventory
-                    tmp = Dict(p => Inf)
-                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
-                else #others default to zero
-                    network.vprops[n][key][p] = 0
-                end
-            end
-            @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p at node $n must be non-negative."
-        end
-    end
-    
-    for n in mrkts, key in market_keys
-        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
-        for p in mats
-            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set default values
-                if key == :demand_distribution #zero demand for that material
-                    tmp = Dict(p => [0])
-                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
-                elseif key == :demand_sequence #zeros demand sequence for that material
-                    network.vprops[n][key][p] = zeros(num_periods)
-                elseif key == :demand_frequency #demand at every period (default)
-                    network.vprops[n][key][p] = 1
-                else #others default to 0
-                    network.vprops[n][key][p] = 0
-                end
-            end
-            if key == :demand_distribution
-                dmnd_dst = network.vprops[n][key][p]
-                @assert mean(dmnd_dst) >= 0 "Parameter $key for material $p at node $n cannot have a negative mean."
-                @assert rand(dmnd_dst) isa Number "Parameter $key for material $p at node $n must be a sampleable distribution or an array."
-                dmnd_dst isa Array && @assert length(dmnd_dst) == 1 "Parameter $key for material $p at node $n cannot be an Array with more than 1 element."
-                if iszero(std(dmnd_dst)) #will only catch Distribution with no std; std(Number) = NaN
-                    tmp = Dict(p => [mean(dmnd_dst)])
-                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
-                    replace_flag = true
-                elseif minimum(dmnd_dst) < 0 
-                    tmp = Dict(p => truncated(dmnd_dst, 0, Inf))
-                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
-                    truncate_flag = true
-                end
-            elseif key == :demand_sequence
-                @assert length(network.vprops[n][key][p]) == num_periods "The demand sequence for material $p at node $n must be a vector with $num_periods entries."
-            else
-                @assert network.vprops[n][key][p] >= 0 "Parameter $key for material $p at node $n must be non-negative."
-            end
-        end
-    end
-    
-    for n in plants, key in plant_keys
-        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for nodes if not specified
-        for p in mats
-            if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and set its default value
-                if key == :production_capacity #default is uncapacitated production
-                    tmp = Dict(p => Inf)
-                    network.vprops[n][key] = merge(network.vprops[n][key], tmp)
-                else #others default to zero
-                    network.vprops[n][key][p] = 0
-                end
-            end
-            param = network.vprops[n][key][p]
-            @assert param >= 0 "Parameter $key for material $p at node $n must be non-negative."
-            if key == :production_time && mod(param,1) > 0
-                roundoff_flag1 = true
-            end
-        end
-    end
-    
-    for a in arcs
-        !in(Edge(a...), keys(network.eprops)) && set_props!(network, Edge(a...), Dict(key => Dict() for key in arc_keys)) #if no metadata was stored on an arc, assume that the lead time is 0 (default value in this block)
-        for key in arc_keys
-            !in(key, keys(network.eprops[Edge(a...)])) && set_prop!(network, Edge(a...), key, Dict()) #create empty params for arcs if not specified
-            for p in mats
-                if !in(p, keys(network.eprops[Edge(a...)][key])) #if material not specified, add it to the dict and set its value to 0
-                    if key == :lead_time
-                        tmp = Dict(p => [0])
-                        network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
-                    else
-                        network.eprops[Edge(a...)][key][p] = 0.
-                    end
-                end            
-                if key == :lead_time
-                    lt = network.eprops[Edge(a...)][key][p]
-                    @assert mean(lt) >= 0 "Parameter $key for material $p on arc $a cannot have a negative mean."
-                    @assert rand(lt) isa Number "Parameter $key for material $p on arc $a must be a sampleable distribution or an array."
-                    lt isa Array && @assert length(lt) == 1 "Parameter $key for material $p on arc $a cannot be an Array with more than 1 element."
-                    if iszero(std(lt)) #will only catch Distribution since std of a singleton array is NaN
-                        tmp = Dict(p => [mean(lt)])
-                        network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
-                        replace_flag = true
-                    elseif minimum(lt) < 0 
-                        tmp = Dict(p => truncated(lt, 0, Inf))
-                        network.eprops[Edge(a...)][key] = merge(network.eprops[Edge(a...)][key], tmp)
-                        truncate_flag = true
-                    end
-                    if lt isa Distribution{Univariate, Continuous} || (lt isa Array && mod(lt[1],1) > 0)
-                        roundoff_flag2 = true
-                    end    
-                else
-                    @assert network.eprops[Edge(a...)][key][p] >= 0 "Parameter $key for material $p on arc $a must be non-negative."
-                end
-            end
-        end
-    end
-    
-    nonsources = [n for n in nodes if !isempty(inneighbors(network, n))]
-    for n in nonsources, p in mats
-        key = :supplier_priority
-        !in(key, keys(network.vprops[n])) && set_prop!(network, n, key, Dict()) #create empty params for market nodes if not specified
-        if !in(p, keys(network.vprops[n][key])) #if material not specified, add it to the dict and add the node's predecessors
-            network.vprops[n][key][p] = inneighbors(network, n)
-        end
-        for s in network.vprops[n][key][p]
-            @assert s in inneighbors(network, n) "Supplier $s is not a supplier to node $n, but is listed in the supplier priority for that node for material $p."
+    all_market_keys = vcat(all_keys, market_keys)
+    all_plant_keys = vcat(all_keys, plant_keys)
+
+    #list of nodes and arcs
+    env_obj = vcat(nodes, arcs)
+    #assign keys to each object
+    env_keys = Dict(
+        obj => 
+            obj in nodes ? 
+                obj in mrkts ? all_market_keys : 
+                obj in plants ? all_plant_keys : 
+                all_keys : 
+            arc_keys
+        for obj in env_obj
+    )
+    #add supplier priority to the keys for the nonsources
+    for node in nodes
+        if node in nonsources
+            push!(env_keys[node], :supplier_priority)
         end
     end
 
-    truncate_flag && @warn "One or more probabilistic distributions allows negative values. The distribution(s) will be truncated to allow only positive values."
-    roundoff_flag1 && @warn "One or more production times are not integer. Round-off error will occur because the simulation uses discrete time."
-    roundoff_flag2 && @warn "One or more lead time distributions are not discrete. Round-off error will occur because the simulation uses discrete time."
-    replace_flag && @warn "One or more probabilistic distributions passed has zero variance. It has been replaced with its mean value."
+    return env_keys
 end
 
 """
