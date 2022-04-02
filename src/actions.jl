@@ -617,6 +617,7 @@ function update_shipments!(x::SupplyChainEnv)
         pipeline_grp[(arc = a, material = mat)].level[1] -= amount
     end
     filter!(:lead => i -> i > 0, x.shipments) #remove shipments that arrived (and any zero values)
+    
     return arrivals
 end
 
@@ -735,8 +736,8 @@ function simulate_markets!(x::SupplyChainEnv)
         end
         inv = onhand_grp[(node = n, material = mat)].level[1]
         sold = min(q, inv) #sales
-        not_sold = max(q - inv, 0.) #unfilfilled
-        push!(x.demand, [x.period, n, mat, q, sold, not_sold]) #update df
+        unfilled = max(q - inv, 0.) #unfilfilled
+        push!(x.demand, [x.period, n, mat, q, sold, unfilled]) #update df
 
         #update end of period inventory (subtract sales)
         onhand_grp[(node = n, material = mat)].level[1] -= sold
@@ -762,64 +763,126 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
 
     #evaluate node profit
     for n in vertices(x.network)
-        profit = 0 #initialize node profit
+        profit = 0. #initialize node profit
         for mat in x.materials
             #get costs
             #holding cost
-            hold_cost = get_prop(x.network, n, :holding_cost)[mat]
-            if hold_cost > 0
-                onhand = onhand_grp[(node = n, material = mat)].level
-                if !isempty(onhand)
-                    profit -= hold_cost * onhand[1]
-                end
-            end
+            holding_cost = holding_costs(x, n, mat, onhand_grp)
             #production cost
             if n in x.producers
-                prod_cost = get_prop(x.network, n, :production_cost)[mat]
-                if prod_cost > 0
-                    produced = sum(filter([:arc] => j -> j[1] == n, orders_grp[(material = mat,)], view=true).accepted)
-                    profit -= prod_cost * produced
-                end
+                profit += production_costs(x, n, mat, orders_grp)
             #sales profit at markets (and penalize for unfulfilled demand)
             elseif n in x.markets
-                sales_price = get_prop(x.network, n, :sales_price)[mat]
-                dmnd_penalty = get_prop(x.network, n, :demand_penalty)[mat]
-                if sales_price > 0 || dmnd_penalty > 0
-                    sold, unfilled = sales_grp[(node = n, material = mat)][1, [:sold, :unfulfilled]]
-                    profit += sales_price * sold
-                    profit -= dmnd_penalty * unfilled
-                end
+                profit += sum(sales_and_penalties(x, n, mat, sales_grp))
             end
             #pay suppliers for received inventory and pay transportation cost
             for pred in inneighbors(x.network, n)
-                price = get_prop(x.network, pred, n, :sales_price)[mat]
-                trans_cost = get_prop(x.network, pred, n, :transportation_cost)[mat]
-                pipe_holding_cost = get_prop(x.network, pred, n, :pipeline_holding_cost)[mat]
-                if price > 0 || trans_cost > 0 #pay purchase of inventory and transportation cost (assume it is paid to a third party)
-                    purchased = filter([:arc, :material] => (j1, j2) -> j1 == (pred, n) && j2 == mat, arrivals, view=true).amount
-                    if !isempty(purchased)
-                        profit -= purchased[1] * price
-                        profit -= purchased[1] * trans_cost
-                    end
-                end
-                if pipe_holding_cost > 0 #pay pipeline holding cost (paid for in-transit inventory in the current period)
-                    intransit = pipeline_grp[(arc = (pred, n), material = mat)].level[1]
-                    profit -= intransit * pipe_holding_cost
-                end
+                profit += accounts_payable(x, pred, n, mat, arrivals, pipeline_grp)
             end
             #receive payment for delivered inventory
             for succ in outneighbors(x.network, n)
-                price = get_prop(x.network, n, succ, :sales_price)[mat]
-                if price > 0 #receive payment for delivered inventory
-                    sold = filter([:arc, :material] => (j1, j2) -> j1 == (n, succ) && j2 == mat, arrivals, view=true).amount
-                    if !isempty(sold)
-                        profit += sold[1] * price
-                    end
-                end
+                profit += accounts_receivable(x, n, succ, mat, arrivals)
             end
         end
 
         #discounted profit
         push!(x.profit, [x.period, 1/(1+x.discount)^x.period * profit, n])
     end
+end
+
+"""
+    holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::GroupedDataFrame)
+
+Calculate holding costs (negative).
+"""
+function holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::GroupedDataFrame)
+    #holding cost
+    hold_cost = get_prop(x.network, n, :holding_cost)[mat]
+    c = 0
+    if hold_cost > 0
+        onhand = onhand_grp[(node = n, material = mat)].level
+        if !isempty(onhand)
+            c -= hold_cost * onhand[1]
+        end
+    end
+
+    return c
+end
+
+"""
+    production_costs(x::SupplyChainEnv, n::Int, mat::Symbol, orders_grp::GroupedDataFrame)
+
+Calculate produciton costs (negative).
+"""
+function production_costs(x::SupplyChainEnv, n::Int, mat::Symbol, orders_grp::GroupedDataFrame)
+    prod_cost = get_prop(x.network, n, :production_cost)[mat]
+    c = 0
+    if prod_cost > 0
+        produced = sum(filter([:arc] => j -> j[1] == n, orders_grp[(material = mat,)], view=true).accepted)
+        c -= prod_cost * produced
+    end
+
+    return c
+end
+
+"""
+    sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
+
+Calculate sales (positive) and unfulfilled demand penalties (negative)
+"""
+function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
+    sales_price = get_prop(x.network, n, :sales_price)[mat]
+    dmnd_penalty = get_prop(x.network, n, :demand_penalty)[mat]
+    s = 0 #sales
+    p = 0 #penalties
+    if sales_price > 0 || dmnd_penalty > 0
+        sold, unfilled = sales_grp[(node = n, material = mat)][1, [:sold, :unfulfilled]]
+        s += sales_price * sold
+        p -= dmnd_penalty * unfilled
+    end
+
+    return s, p
+end
+
+"""
+    accounts_payable(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+
+Calculate payments to suppliers and transportation costs (negative).
+"""
+function accounts_payable(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+    price = get_prop(x.network, sup, n, :sales_price)[mat]
+    trans_cost = get_prop(x.network, sup, n, :transportation_cost)[mat]
+    pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]
+    ap = 0 #accounts payable
+    if price > 0 || trans_cost > 0 #pay purchase of inventory and transportation cost (assume it is paid to a third party)
+        purchased = filter([:arc, :material] => (j1, j2) -> j1 == (sup, n) && j2 == mat, arrivals, view=true).amount
+        if !isempty(purchased)
+            ap -= purchased[1] * price
+            ap -= purchased[1] * trans_cost
+        end
+    end
+    if pipe_holding_cost > 0 #pay pipeline holding cost (paid for in-transit inventory in the current period)
+        intransit = pipeline_grp[(arc = (sup, n), material = mat)].level[1]
+        ap -= intransit * pipe_holding_cost
+    end
+
+    return ap
+end
+
+"""
+    accounts_receivable(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, arrivals::DataFrame)
+
+Calculate payment for sales to downstream nodes (positive).
+"""
+function accounts_receivable(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, arrivals::DataFrame)
+    price = get_prop(x.network, n, req, :sales_price)[mat]
+    ar = 0
+    if price > 0 #receive payment for delivered inventory
+        sold = filter([:arc, :material] => (j1, j2) -> j1 == (n, req) && j2 == mat, arrivals, view=true).amount
+        if !isempty(sold)
+            ar += sold[1] * price
+        end
+    end
+
+    return ar
 end
