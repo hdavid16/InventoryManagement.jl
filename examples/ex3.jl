@@ -29,19 +29,19 @@ set_props!(net, 3, Dict(:initial_inventory => Dict(:B => 190), #initial inventor
 
 set_props!(net, 4, Dict(:initial_inventory => Dict(:A => 105), #initial inventory at storage
                         :inventory_capacity => Dict(:A => Inf, :B => 0, :C => 0),
-                        :demand_distribution => Dict(:A => [5]), #distribution given
+                        :demand_distribution => Dict(:A => 5), #distribution given
                         :demand_frequency => Dict(:A => 1))) #order every other day on average
 
 set_props!(net, 5, Dict(:initial_inventory => Dict(:A => 60), #initial inventory at retail
                         :inventory_capacity => Dict(:A => Inf, :B => 0, :C => 0),
-                        :demand_distribution => Dict(:A => [10]), #Normal Distribution double that of storage
+                        :demand_distribution => Dict(:A => 10), #Normal Distribution double that of storage
                         :demand_frequency => Dict(:A => 1))) #order daily
 
 ##specify lead times
-set_props!(net, 1, 2, Dict(:lead_time => Dict(:C => [0])))
-set_props!(net, 2, 3, Dict(:lead_time => Dict(:B => [0])))
-set_props!(net, 3, 4, Dict(:lead_time => Dict(:A => [0])))
-set_props!(net, 4, 5, Dict(:lead_time => Dict(:A => [0])))
+set_props!(net, 1, 2, Dict(:lead_time => Dict(:C => 20)))
+set_props!(net, 2, 3, Dict(:lead_time => Dict(:B => 15)))
+set_props!(net, 3, 4, Dict(:lead_time => Dict(:A => 10)))
+set_props!(net, 4, 5, Dict(:lead_time => Dict(:A => 5)))
 
 ##define reorder policy parameters
 policy_type = :sS #(s, S) policy
@@ -57,13 +57,7 @@ simulate_policy!(env, s, S; policy_type, review_period, policy_variable)
 
 ##make plots
 using DataFrames, StatsPlots
-#profit
-node_profit = groupby(env.profit, :node)
-profit = transform(node_profit, :value => cumsum)
-fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :topleft,
-                    xlabel="period", ylabel="cumulative profit")
-
-#inventory position
-inv_position = filter(i -> i.node > 1, env.ech_position)
-fig2 = @df inv_position plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :topright,
+#inventory level
+df = filter(i -> i.node > 1, env.ech_position)
+fig2 = @df df plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
                     xlabel="period", ylabel="echelon position")

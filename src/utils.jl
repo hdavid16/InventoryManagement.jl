@@ -47,58 +47,58 @@ function check_inputs!(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
     for obj in keys(env_keys), key in env_keys[obj]
         !in(key, keys(props(network, obj...))) && set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
         param_dict = get_prop(network, obj..., key)
-        for p in mats
+        for mat in mats
             #set defaults
-            if !in(p, keys(param_dict)) #if material not specified, add it to the dict and set default values
+            if !in(mat, keys(param_dict)) #if material not specified, add it to the dict and set default values
                 if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
-                    set_prop!(network, obj, key, merge(param_dict, Dict(p => Inf)))
+                    set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
                 elseif key in [:demand_distribution, :lead_time] #zero demand/lead_time for that material
-                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => [0])))
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(mat => [0])))
                 elseif key == :demand_sequence #zeros demand sequence for that material
-                    merge!(param_dict, Dict(p => zeros(num_periods)))
+                    merge!(param_dict, Dict(mat => zeros(num_periods)))
                 elseif key == :demand_frequency #demand at every period
-                    merge!(param_dict, Dict(p => 1))
+                    merge!(param_dict, Dict(mat => 1))
                 elseif key == :supplier_priority #random ordering of supplier priority
-                    merge!(param_dict, Dict(p => inneighbors(network, obj)))
+                    merge!(param_dict, Dict(mat => inneighbors(network, obj)))
                 else #all others default to 0
-                    merge!(param_dict, Dict(p => 0.))
+                    merge!(param_dict, Dict(mat => 0.))
                 end
             end
             #check parameter value
             param_dict = get_prop(network, obj..., key)
-            param = param_dict[p]
+            param = param_dict[mat]
             if key in [:demand_distribution, :lead_time]
                 #convert deterministic value to singleton
                 if param isa Number 
-                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => [param])))
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(mat => [param])))
                 end
                 param_dict = get_prop(network, obj..., key)
-                param = param_dict[p]
+                param = param_dict[mat]
                 #checks
-                @assert mean(param) >= 0 "Parameter $key for material $p at $obj cannot have a negative mean."
-                @assert rand(param) isa Number "Parameter $key for material $p at $obj must be a sampleable distribution or an array."
-                param isa Array && @assert length(param) == 1 "Parameter $key for material $p at $obj cannot be an Array with more than 1 element."
+                @assert mean(param) >= 0 "Parameter $key for material $mat at $obj cannot have a negative mean."
+                @assert rand(param) isa Number "Parameter $key for material $mat at $obj must be a sampleable distribution or an array."
+                param isa Array && @assert length(param) == 1 "Parameter $key for material $mat at $obj cannot be an Array with more than 1 element."
                 #convert to deterministic if no variance or truncate if distribution is negative-valued
                 if iszero(std(param)) #will only catch Distribution with no std; std(Number) = NaN
-                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => [mean(param)])))
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(mat => [mean(param)])))
                     replace_flag = true
                 elseif minimum(param) < 0 
-                    set_prop!(network, obj..., key, merge(param_dict, Dict(p => truncated(param, 0, Inf))))
+                    set_prop!(network, obj..., key, merge(param_dict, Dict(mat => truncated(param, 0, Inf))))
                     truncate_flag = true
                 end
                 if key == :lead_time && (param isa Distribution{Univariate, Continuous} || (param isa Array && mod(param[1],1) > 0))
                     roundoff_flag2 = true
                 end    
             elseif key == :demand_sequence
-                @assert length(param) == num_periods "The demand sequence for material $p at node $obj must be a vector with $num_periods entries."
+                @assert length(param) == num_periods "The demand sequence for material $mat at node $obj must be a vector with $num_periods entries."
             elseif key == :production_time && mod(param,1) > 0 #check for round-off error in production time
                 roundoff_flag1 = true  
             elseif key == :supplier_priority
                 for s in param
-                    @assert s in inneighbors(network, obj) "Supplier $s is not a supplier to node $obj, but is listed in the supplier priority for that node for material $p."
+                    @assert s in inneighbors(network, obj) "Supplier $s is not a supplier to node $obj, but is listed in the supplier priority for that node for material $mat."
                 end
             else
-                @assert param >= 0 "Parameter $key for material $p at $obj must be non-negative."
+                @assert param >= 0 "Parameter $key for material $mat at $obj must be non-negative."
             end
         end
     end
@@ -321,7 +321,7 @@ function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRan
         review_period = 1:review_period:env.num_periods
     end
     if !isa(review_period, Dict)
-        review_period = Dict((n,m) => review_period for n in vertices(env.network), m in env.materials)
+        review_period = Dict((n,mat) => review_period for n in vertices(env.network), mat in env.materials)
     end
     cycle = Dict(
         key => 
@@ -339,7 +339,7 @@ function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRan
         i -> !isnothing(i.cycle),
         combine(
             groupby(orders, [:node, :material]),
-            [:period,:node,:material] => ByRow((t,n,m) -> findfirst(x -> t in x, cycle[n,m])) => :cycle,
+            [:period,:node,:material] => ByRow((t,n,mat) -> findfirst(x -> t in x, cycle[n,mat])) => :cycle,
             :unfulfilled
         )
     )
@@ -400,17 +400,15 @@ function material_conversion(net::MetaDiGraph)
     end
     #create conversion dictionary
     mat_conv = Dict()
-    for m in mats, p in mats
-        if m != p
-            i = findfirst(x -> x == m, mats)
-            j = findfirst(x -> x == p, mats)
-            yen_k = yen_k_shortest_paths(mat_graph, i, j, weights(mat_graph), 100)
-            stoich = 0
-            for arr in yen_k.paths
-                stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
-            end
-            mat_conv[(m, p)] = -abs(stoich)
+    for mat0 in mats, mat in setdiff(mats, [mat0])
+        i = findfirst(x -> x == mat0, mats)
+        j = findfirst(x -> x == mat, mats)
+        yen_k = yen_k_shortest_paths(mat_graph, i, j, weights(mat_graph), 100)
+        stoich = 0
+        for arr in yen_k.paths
+            stoich += prod([get_prop(mat_graph, arr[k], arr[k+1], :weight) for k in 1:length(arr)-1])
         end
+        mat_conv[(mat0, mat)] = -abs(stoich)
     end
 
     return mat_graph, mat_conv

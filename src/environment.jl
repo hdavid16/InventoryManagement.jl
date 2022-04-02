@@ -97,7 +97,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
         ]...
     )
     #check inputs
-    check_inputs(net, nodes, arcs, mrkts, plants, mats, num_periods)
+    check_inputs!(net, nodes, arcs, mrkts, plants, mats, num_periods)
     #get bill of materials
     bom = get_prop(net, :bill_of_materials)
     #get material conversion to products
