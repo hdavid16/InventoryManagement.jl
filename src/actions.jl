@@ -137,8 +137,6 @@ function place_requests!(x::SupplyChainEnv, act::Array, arcs::Vector)
                 #store shipments and lead times
                 if accepted > 0 #update active shipments
                     if amount > 0
-                        # x.replenishments[x.replenishments.period .== x.period, :unfulfilled] .= amount
-                        # x.replenishments[x.replenishments.period .== x.period, :reallocated] .= new_alloc
                         x.replenishments[end, :unfulfilled] = amount
                         x.replenishments[end, :reallocated] = new_alloc
                     end
@@ -732,21 +730,16 @@ function simulate_markets!(x::SupplyChainEnv)
         dprob = Bernoulli(1/get_prop(x.network, n, :demand_frequency)[mat]) #demand probability (probability of ordering is 1/demand period; aka, once every x days)
         dmnd = get_prop(x.network, n, :demand_distribution)[mat] #demand distribution
         q = iszero(dmnd_seq) ? rand(dprob) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
-        demand = [x.period, n, mat, q, 0., 0.] #initialize demand vector to store in df
         if x.options[:backlog] && x.period > 1 #add previous backlog to the quantity requested at the market
             q += last_d_group[(node = n, material = mat)].unfulfilled[1]
         end
-        if q > 0
-            inv = onhand_grp[(node = n, material = mat)].level[1]
-            demand[5] = min(q, inv) #sales
-            demand[6] = max(q - inv, 0.) #unfilfilled
-        end
-        push!(x.demand, demand) #update df
+        inv = onhand_grp[(node = n, material = mat)].level[1]
+        sold = min(q, inv) #sales
+        not_sold = max(q - inv, 0.) #unfilfilled
+        push!(x.demand, [x.period, n, mat, q, sold, not_sold]) #update df
 
         #update end of period inventory (subtract sales)
-        if demand[5] > 0
-            onhand_grp[(node = n, material = mat)].level[1] -= demand[5]
-        end
+        onhand_grp[(node = n, material = mat)].level[1] -= sold
     end
 end
 
