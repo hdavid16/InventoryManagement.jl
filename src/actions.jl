@@ -666,54 +666,84 @@ function update_inventories!(x::SupplyChainEnv)
     conversion_dict = get_prop(x.network, :conversion_dictionary)
 
     #initialize echelon inventory positions
-    for n in vertices(x.network), mat in x.materials
-        if get_prop(x.network, n, :inventory_capacity)[mat] > 0
-            push!(x.ech_position, [x.period, n, mat, 0])
-        end
-    end
+    initialize_echelons!(x)
     ech_df = filter(:period => j -> j == x.period, x.ech_position, view=true) #echelon position at each node
     ech_grp = groupby(ech_df, [:node, :material]) #group by material
     
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network), mat in x.materials
-        making = reduce(+,filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == mat, x.production, view=true).amount, init=0) #commited production order
-        upstream = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = mat,)], view=true).level) #in-transit inventory
-        onhand = onhand_grp[(node = n, material = mat)].level[1] #on_hand inventory
-        backorder = 0 #initialize replenishment orders placed to suppliers that are backlogged
-        backlog = 0 #initialize backlog for orders placed by successors
-        if x.options[:backlog]
-            if n in x.markets #find demand backlog
-                backlog += dmnd_grp[(node = n, material = mat)].unfulfilled[1]
-            else #find any unfulfilled replenishment request that was not reallocated
-                backlog += sum(filter(:arc => i -> i[1] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
-            end
-            backorder = sum(filter(:arc => i -> i[end] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
-        end
+        ilevel, ipos0, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp, dmnd_grp, orders_grp)
         #update inventory
-        push!(x.inv_level, [x.period, n, mat, onhand - backlog]) 
+        push!(x.inv_level, [x.period, n, mat, ilevel]) 
         #update inventory
-        ipos0 = onhand + making + upstream + backorder #inventory position without backlog
-        ipos = ipos0 - backlog #include backlog in inventory position
         push!(x.inv_position, [x.period, n, mat, ipos]) 
         #update echelons
-        #identify which echelons have been affected and add to these
-        for ech in findall(i -> n in i, x.echelons)
-            if get_prop(x.network, ech, :inventory_capacity)[mat] > 0 #only add to echelon if that node holds that material
-                if n in x.markets #backlog is only added for market nodes (to avoid double counting with backorder)
-                    ech_grp[(node = ech, material = mat)].level[1] += ipos
-                else
-                    ech_grp[(node = ech, material = mat)].level[1] += ipos0
-                end
-            end
+        update_echelons!(x, n, mat, ipos, ipos0, ech_grp, dmnd_dict, conversion_dict)
+    end
+
+end
+
+"""
+    initialize_echelons!(x::SupplyChainEnv)
+
+Initialize echelon positions at the current period to 0.
+"""
+function initialize_echelons!(x::SupplyChainEnv)
+    for n in vertices(x.network), mat in x.materials
+        if get_prop(x.network, n, :inventory_capacity)[mat] > 0
+            push!(x.ech_position, [x.period, n, mat, 0])
         end
-        #adjust all intermediates/raw materials for demand at the markets to correct the echelon position to account for these
-        for f in setdiff(x.products, [mat])
-            if get_prop(x.network, n, :inventory_capacity)[mat] > 0
-                ech_grp[(node = n, material = mat)].level[1] += dmnd_dict[f] * conversion_dict[mat,f] #subtract "equivalent" raw material sold
+    end
+end
+
+"""
+    inventory_components(x::SupplyChainEnv, n::Int, mat::Symbol, pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, dmnd_grp::GroupedDataFrame, orders_grp::GroupedDataFrame)
+
+Extract components to determine inventory paramters.
+"""
+function inventory_components(x::SupplyChainEnv, n::Int, mat::Symbol, pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, dmnd_grp::GroupedDataFrame, orders_grp::GroupedDataFrame)
+    making = reduce(+,filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == mat, x.production, view=true).amount, init=0) #commited production order
+    upstream = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = mat,)], view=true).level) #in-transit inventory
+    onhand = onhand_grp[(node = n, material = mat)].level[1] #on_hand inventory
+    backorder = 0 #initialize replenishment orders placed to suppliers that are backlogged
+    backlog = 0 #initialize backlog for orders placed by successors
+    if x.options[:backlog]
+        if n in x.markets #find demand backlog
+            backlog += dmnd_grp[(node = n, material = mat)].unfulfilled[1]
+        else #find any unfulfilled replenishment request that was not reallocated
+            backlog += sum(filter(:arc => i -> i[1] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
+        end
+        backorder = sum(filter(:arc => i -> i[end] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
+    end
+    ilevel = onhand - backlog #inventory level
+    ipos0 = onhand + making + upstream + backorder #inventory position without backlog
+    ipos = ipos0 - backlog #include backlog in inventory position
+
+    return ilevel, ipos0, ipos
+end
+
+"""
+    update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ipos0::Float64, ech_grp::GroupedDataFrame, dmnd_dict::Dict, conversion_dict::Dict)
+
+Update echelon positions for current time period.
+"""
+function update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ipos0::Float64, ech_grp::GroupedDataFrame, dmnd_dict::Dict, conversion_dict::Dict)
+    #identify which echelons have been affected and add to these
+    for ech in findall(i -> n in i, x.echelons)
+        if get_prop(x.network, ech, :inventory_capacity)[mat] > 0 #only add to echelon if that node holds that material
+            if n in x.markets #backlog is only added for market nodes (to avoid double counting with backorder)
+                ech_grp[(node = ech, material = mat)].level[1] += ipos
+            else
+                ech_grp[(node = ech, material = mat)].level[1] += ipos0
             end
         end
     end
-
+    #adjust all intermediates/raw materials for demand at the markets to correct the echelon position to account for these
+    for f in setdiff(x.products, [mat])
+        if get_prop(x.network, n, :inventory_capacity)[mat] > 0
+            ech_grp[(node = n, material = mat)].level[1] += dmnd_dict[f] * conversion_dict[mat,f] #subtract "equivalent" raw material sold
+        end
+    end
 end
 
 """

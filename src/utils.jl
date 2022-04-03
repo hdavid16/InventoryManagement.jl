@@ -94,6 +94,11 @@ function check_inputs!(network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
             elseif key == :production_time && mod(param,1) > 0 #check for round-off error in production time
                 roundoff_flag1 = true  
             elseif key == :supplier_priority
+                if param isa Number 
+                    set_prop!(network, obj, key, merge(param_dict, Dict(mat => [param])))
+                end
+                param_dict = get_prop(network, obj..., key)
+                param = param_dict[mat]
                 for s in param
                     @assert s in inneighbors(network, obj) "Supplier $s is not a supplier to node $obj, but is listed in the supplier priority for that node for material $mat."
                 end

@@ -15,8 +15,7 @@ set_props!(net, 1, Dict(:initial_inventory => Dict(:A => Inf)))
 
 set_props!(net, 2, Dict(:initial_inventory => Dict(:A => 100),
                         :demand_distribution => Dict(:A => Normal(5,0.5)),
-                        :demand_frequency => Dict(:A => 2),
-                        :supplier_priority => Dict(:A => 1)))
+                        :demand_frequency => Dict(:A => 2)))
 
 #specify sales prices, transportation costs, lead time
 set_props!(net, 1, 2, Dict(:lead_time => Dict(:A => Poisson(5))))
