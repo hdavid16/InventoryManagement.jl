@@ -127,9 +127,7 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
-- `:production_cost::Dict`: unit production cost for each material (`keys`)
 - `:production_capacity::Dict`: maximum production capacity for each material (`keys`).
-- `:production_time::Dict`: production lead time for each material (`keys`).
 
 `Distributors` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)

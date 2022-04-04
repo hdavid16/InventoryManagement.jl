@@ -19,7 +19,6 @@ abstract type AbstractEnv end
 - `ech_position::DataFrame`: Timeseries with echelon inventory position @ each node.
 - `replenishments::DataFrame`: Timeseries with replenishment orders placed on each arc.
 - `shipments::DataFrame`: Temp table with active shipments and time to arrival on each arc.
-- `production::DataFrame`: Temp table with active material production commited to an arc and time to ship.
 - `demand::DataFrame`: Timeseries with realization of demand at each market, and amounts sold, unfulfilled demand, and backlog.
 - `profit::DataFrame`: Timeseries with profit @ each node.
 - `reward::Float64`: Final reward in the system (used for RL)
@@ -41,7 +40,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     echelons::Dict
     materials::Vector
     products::Vector
-    bill_of_materials::Array
+    # bill_of_materials::Array
     inv_on_hand::DataFrame
     inv_level::DataFrame
     inv_pipeline::DataFrame
@@ -49,7 +48,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     ech_position::DataFrame
     replenishments::DataFrame
     shipments::DataFrame
-    production::DataFrame
+    # production::DataFrame
     demand::DataFrame
     profit::DataFrame
     reward::Float64
@@ -80,39 +79,28 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
     echelons = Dict(n => identify_echelons(net, n) for n in nodes)
     #get main edges
     arcs = [(e.src,e.dst) for e in edges(net)]
-    #get end distributors, producers, and distribution centers
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :demand_sequence] #keys to identify a market
-    plant_keys = [:production_cost, :production_time, :production_capacity] #keys to identify a plant (producer)
-    mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(net.vprops[n])))]
-    plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(net.vprops[n])))]
-    sinks = [n for n in nodes if isempty(outneighbors(net, n))]
-    dcs = setdiff(nodes, plants, sinks)
-    #get materials
+    #identify nodes and products
     mats = get_prop(net, :materials)
-    prods = union(
-        [
-            intersect([:demand_distribution, :demand_sequence], keys(net.vprops[n]))[1] |> #find which of the keys is used in the market node (demand_distribution or demand_sequence)
-            param -> findall(i -> i isa Sampleable || !iszero(i), get_prop(net,n,param)) 
-            for n in mrkts
-        ]...
-    )
+    mrkts, plants, dcs, prods = identify_nodes_and_products(net)
     #check inputs
     check_inputs!(net, nodes, arcs, mrkts, plants, mats, num_periods)
-    #get bill of materials
-    bom = get_prop(net, :bill_of_materials)
-    #get material conversion to products
-    _, conversion_dict = material_conversion(net)
-    set_prop!(net, :conversion_dictionary, conversion_dict)
+    # #get bill of materials
+    # bom = get_prop(net, :bill_of_materials)
+    # #get material conversion to products
+    # _, conversion_dict = material_conversion(net)
+    # set_prop!(net, :conversion_dictionary, conversion_dict)
     #create logging dataframes
     inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
     for n in nodes, p in mats
         init_inv = get_prop(net, n, :initial_inventory)
         push!(inv_on_hand, (0, n, p, init_inv[p], 0))
     end
-    inv_pipeline = DataFrame(:period => zeros(Int, length(mats)*length(arcs)),
-                             :arc => repeat(arcs, inner = length(mats)),
-                             :material => repeat(mats, outer = length(arcs)),
-                             :level => zeros(length(mats)*length(arcs)))
+    inv_pipeline = DataFrame(
+        :period => zeros(Int, length(mats)*length(arcs)),
+        :arc => repeat(arcs, inner = length(mats)),
+        :material => repeat(mats, outer = length(arcs)),
+        :level => zeros(length(mats)*length(arcs))
+    )
     inv_position = select(inv_on_hand, [:period, :node, :material, :level])
     inv_level = copy(inv_position)
     ech_position = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[])
@@ -122,42 +110,72 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
             push!(ech_position, (0, n, p, ech_pos))
         end
     end
-    replenishments = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(arcs)),
-                               :arc => Tuple[],#repeat(arcs, inner = length(mats)),
-                               :material => Any[],#repeat(mats, outer = length(arcs)),
-                               :requested => Float64[],#total amount requested
-                               :accepted => Float64[],#zeros(length(mats)*length(arcs)),
-                               :lead => Float64[],#zeros(Int, length(mats)*length(arcs)),
-                               :unfulfilled => Float64[],#zeros(length(mats)*length(arcs)),
-                               :reallocated => Any[])#Any[missing for i in 1:length(mats)*length(arcs)])
-    shipments = DataFrame(:arc => [],
-                          :material => [],
-                          :amount => Float64[],
-                          :lead => Float64[])
-    production = DataFrame(:arc => [],
-                           :material => [],
-                           :amount => Float64[],
-                           :lead => Float64[])
-    demand = DataFrame(:period => Int[],#zeros(Int, length(mats)*length(mrkts)),
-                       :node => Int[],#repeat(mrkts, inner = length(mats)),
-                       :material => Any[],#repeat(mats, outer = length(mrkts)),
-                       :demand => Float64[],#zeros(length(mats)*length(mrkts)),
-                       :sold => Float64[],#zeros(length(mats)*length(mrkts)),
-                       :unfulfilled => Float64[])#zeros(length(mats)*length(mrkts)))
-    profit = DataFrame(:period => Int[],#zeros(Int, length(nodes)),
-                       :value => Float64[],#zeros(length(nodes)),
-                       :node => Int[])#nodes)
-    reward = 0
-    period = 0
+    replenishments = DataFrame(
+        :period => Int[],#zeros(Int, length(mats)*length(arcs)),
+        :arc => Tuple[],#repeat(arcs, inner = length(mats)),
+        :material => Any[],#repeat(mats, outer = length(arcs)),
+        :requested => Float64[],#total amount requested
+        :accepted => Float64[],#zeros(length(mats)*length(arcs)),
+        :lead => Float64[],#zeros(Int, length(mats)*length(arcs)),
+        :unfulfilled => Float64[],#zeros(length(mats)*length(arcs)),
+        :reallocated => Any[]#Any[missing for i in 1:length(mats)*length(arcs)])
+    )
+    shipments = DataFrame(
+        :arc => [],
+        :material => [],
+        :amount => Float64[],
+        :lead => Float64[]
+    )
+    # production = DataFrame(:arc => [],
+    #                        :material => [],
+    #                        :amount => Float64[],
+    #                        :lead => Float64[])
+    demand = DataFrame(
+        :period => Int[],#zeros(Int, length(mats)*length(mrkts)),
+        :node => Int[],#repeat(mrkts, inner = length(mats)),
+        :material => Any[],#repeat(mats, outer = length(mrkts)),
+        :demand => Float64[],#zeros(length(mats)*length(mrkts)),
+        :sold => Float64[],#zeros(length(mats)*length(mrkts)),
+        :unfulfilled => Float64[]#zeros(length(mats)*length(mrkts)))
+    )
+    profit = DataFrame(
+        :period => Int[],#zeros(Int, length(nodes)),
+        :value => Float64[],#zeros(length(nodes)),
+        :node => Int[]#nodes
+    )
+    period, reward = 0, 0
     num_periods = num_periods
-    options = Dict(:backlog => backlog, :reallocate => reallocate, 
-                   :evaluate_profit => evaluate_profit,
-                   :capacitated_inventory => capacitated_inventory)
+    options = Dict(
+        :backlog => backlog, 
+        :reallocate => reallocate, 
+        :evaluate_profit => evaluate_profit,
+        :capacitated_inventory => capacitated_inventory
+    )
     env = SupplyChainEnv(
-        net, mrkts, plants, dcs, echelons, mats, prods, bom, 
-        inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, 
-        replenishments, shipments, production, demand,
-        profit, reward, period, num_periods, discount, options, seed
+        net, 
+        mrkts, 
+        plants, 
+        dcs, 
+        echelons, 
+        mats, 
+        prods, 
+        # bom, 
+        inv_on_hand, 
+        inv_level, 
+        inv_pipeline, 
+        inv_position, 
+        ech_position, 
+        replenishments, 
+        shipments, 
+        # production, 
+        demand,
+        profit, 
+        reward, 
+        period, 
+        num_periods, 
+        discount, 
+        options, 
+        seed
     )
 
     Random.seed!(env)
@@ -180,14 +198,18 @@ function reset!(env::SupplyChainEnv)
     filter!(i -> i.period == 0, env.replenishments)
     filter!(i -> i.period == 0, env.demand)
     filter!(i -> i.period == 0, env.profit)
-    env.shipments = DataFrame(:arc => [],
-                          :material => [],
-                          :amount => Float64[],
-                          :lead => Int[])
-    env.production = DataFrame(:arc => [],
-                           :material => [],
-                           :amount => Float64[],
-                           :lead => Int[])
+    env.shipments = DataFrame(
+        :arc => [],
+        :material => [],
+        :amount => Float64[],
+        :lead => Int[]
+    )
+    # env.production = DataFrame(
+    #     :arc => [],
+    #     :material => [],
+    #     :amount => Float64[],
+    #     :lead => Int[]
+    # )
 
     Random.seed!(env)
 end
