@@ -170,10 +170,10 @@ A `SupplyChainEnv` has the following fields:
 - `markets::Array`: list of market nodes
 - `producers::Array`: list of producer nodes
 - `materials::Array`: list of all material (material) names (strings)
-- `inv_on_hand::DataFrame`: timeseries with on hand inventories @ each node.
-- `inv_level::DataFrame`: timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
-- `inv_pipeline::DataFrame`: timeseries with pipeline inventories on each arc.
-- `inv_position::DataFrame`: timeseries with inventory positions @ each node (inventory level + placed replenishments).
+- `inventory_on_hand::DataFrame`: timeseries with on hand inventories @ each node.
+- `inventory_level::DataFrame`: timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
+- `inventory_pipeline::DataFrame`: timeseries with pipeline inventories on each arc.
+- `inventory_position::DataFrame`: timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
 - `shipments::DataFrame`: current shipments and time to arrival for each node
 - `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market

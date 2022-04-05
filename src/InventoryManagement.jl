@@ -18,6 +18,6 @@ include("policy.jl")
 include("spaces.jl")
 
 export SupplyChainEnv, reset!, is_terminated, action_space, show_action
-export reorder_policy, simulate_policy!, service_measures
+export reorder_policy, simulate_policy!, calculate_service_measures!
 
 end

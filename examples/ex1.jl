@@ -59,6 +59,6 @@ fig1 = @df profit plot(:period, :value_cumsum, group={Node = :node}, legend = :t
                     xlabel="period", ylabel="cumulative profit")
 
 #inventory position
-inv_position = filter(i -> i.node > 1 ? i.material == :A : i.material in [:A,:B], env.inv_position)
-fig2 = @df inv_position plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomleft,
+inventory_position = filter(i -> i.node > 1 ? i.material == :A : i.material in [:A,:B], env.inventory_position)
+fig2 = @df inventory_position plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomleft,
                     xlabel="period", ylabel="inventory position", yticks = 0:25:125)

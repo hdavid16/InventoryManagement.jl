@@ -1,11 +1,11 @@
 """
-    service_measures(env::SupplyChainEnv)
+    calculate_service_measures!(env::SupplyChainEnv)
 
 Calculate mean service level and fill rate for each node and each material in the simulation.
 
 If there is more than 1 supplier and reallocation of requests occurs, the metric will be associated with the original supplier.
 """
-function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRange, Vector, Dict} = 1)
+function calculate_service_measures!(env::SupplyChainEnv)
     #filter out times with no demand
     demand = filter(i -> i.quantity > 0, env.demand) 
     #generate a column with the supplier for each order
@@ -27,5 +27,5 @@ function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRan
         :order_filled => mean => :service_level
     )
     
-    return service_measures
+    env.metrics = service_measures
 end

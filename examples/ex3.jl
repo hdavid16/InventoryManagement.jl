@@ -52,7 +52,7 @@ set_props!(net, 4, 5, Dict(:lead_time => Dict(:A => Exponential(2))))
 ##define reorder policy parameters
 policy_type = :sS #(s, S) policy
 review_period = 1 #continuous review
-policy_variable = :ech_position #variable tracked by policy
+policy_variable = :echelon_stock #variable tracked by policy
 s = Dict((2,:C) => 215, (3,:B) => 190, (4,:A) => 165, (5,:A) => 60) #lower bound on inventory
 S = Dict((2,:C) => 215, (3,:B) => 190, (4,:A) => 165, (5,:A) => 60) #base stock level
 
@@ -64,6 +64,6 @@ simulate_policy!(env, s, S; policy_type, review_period, policy_variable)
 ##make plots
 using DataFrames, StatsPlots
 #inventory level
-df = filter(i -> i.node > 1, env.ech_position)
+df = filter(i -> i.node > 1, env.echelon_stock)
 fig2 = @df df plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
-                    xlabel="period", ylabel="echelon position", ylim=(min(0, minimum(df.level)),maximum(df.level)))
+                    xlabel="period", ylabel="echelon stock", ylim=(min(0, minimum(df.level)),maximum(df.level)))

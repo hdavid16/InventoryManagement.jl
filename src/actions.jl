@@ -60,19 +60,19 @@ Initialize on-hand and pipeline inventories with those from the previous period.
 """
 function initialize_inventories!(x::SupplyChainEnv)
     #find previous period's inventories
-    prev_inv_on_hand = filter(:period => j -> j == x.period-1, x.inv_on_hand, view=true) #previous inventory level
-    prev_onhand_grp = groupby(prev_inv_on_hand, [:node, :material])
-    prev_inv_pipeline = filter(:period => j -> j == x.period-1, x.inv_pipeline, view=true) #previous inventory level
-    prev_pipeln_grp = groupby(prev_inv_pipeline, [:arc, :material])
+    prev_inventory_on_hand = filter(:period => j -> j == x.period-1, x.inventory_on_hand, view=true) #previous inventory level
+    prev_onhand_grp = groupby(prev_inventory_on_hand, [:node, :material])
+    prev_inventory_pipeline = filter(:period => j -> j == x.period-1, x.inventory_pipeline, view=true) #previous inventory level
+    prev_pipeln_grp = groupby(prev_inventory_pipeline, [:arc, :material])
     #update dataframes
     for mat in x.materials
         for n in vertices(x.network)
             prev = prev_onhand_grp[(node = n, material = mat)][1,:level] #previous on hand inventory
-            push!(x.inv_on_hand, [x.period, n, mat, prev, 0]) #intialize with previous inventory levels
+            push!(x.inventory_on_hand, [x.period, n, mat, prev, 0]) #intialize with previous inventory levels
         end
         for a in edges(x.network)
             prev = prev_pipeln_grp[(arc = (a.src,a.dst), material = mat)][1,:level] #previous pipeline inventory
-            push!(x.inv_pipeline, [x.period, (a.src,a.dst), mat, prev]) #intialize with previous inventory levels
+            push!(x.inventory_pipeline, [x.period, (a.src,a.dst), mat, prev]) #intialize with previous inventory levels
         end
     end
 end
@@ -97,10 +97,10 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
     #non source nodes
     nonsources = [n for n in vertices(x.network) if !isempty(inneighbors(x.network, n))]
     #get on hand inventory
-    supply_df = filter(:period => k -> k == x.period, x.inv_on_hand, view=true) #on_hand inventory supply
+    supply_df = filter(:period => k -> k == x.period, x.inventory_on_hand, view=true) #on_hand inventory supply
     supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
     #get pipeline inventory
-    pipeline_df = filter(:period => k -> k == x.period, x.inv_pipeline, view=true)
+    pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
 
     #place requests
@@ -316,10 +316,10 @@ Update inventories throughout the network for arrived shipments.
 function update_shipments!(x::SupplyChainEnv)
     #filter data
     #get on hand inventory
-    supply_df = filter(:period => k -> k == x.period, x.inv_on_hand, view=true) #on_hand inventory supply
+    supply_df = filter(:period => k -> k == x.period, x.inventory_on_hand, view=true) #on_hand inventory supply
     supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
     #get pipeline inventory
-    pipeline_df = filter(:period => k -> k == x.period, x.inv_pipeline, view=true)
+    pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
 
     #find active shipments with 0 lead time
@@ -340,7 +340,7 @@ end
 Discard any excess inventory (exceeding the inventory capacity at each node).
 """
 function enforce_inventory_limits!(x::SupplyChainEnv)
-    on_hand_df = filter(:period => j -> j == x.period, x.inv_on_hand, view=true) #on_hand inventories
+    on_hand_df = filter(:period => j -> j == x.period, x.inventory_on_hand, view=true) #on_hand inventories
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material for easier lookup
     for n in vertices(x.network)
         node_max_inv = get_prop(x.network, n, :inventory_capacity)
@@ -364,24 +364,24 @@ Update inventory position and inventory level for all materials and nodes.
 """
 function update_inventories!(x::SupplyChainEnv)
     #filter data
-    on_hand_df = filter(:period => j -> j == x.period, x.inv_on_hand, view=true) #on_hand inventory at node
+    on_hand_df = filter(:period => j -> j == x.period, x.inventory_on_hand, view=true) #on_hand inventory at node
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
-    pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories
+    pipeline_df = filter(:period => j -> j == x.period, x.inventory_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, :material) #group by material
     orders_df = filter([:period, :reallocated] => (i1, i2) -> i1 == x.period && ismissing(i2), x.demand, view=true) #replenishment orders from current period
     orders_grp = groupby(orders_df, :material) #group by material
 
     #initialize echelon inventory positions
     initialize_echelons!(x)
-    ech_df = filter(:period => j -> j == x.period, x.ech_position, view=true) #echelon position at each node
+    ech_df = filter(:period => j -> j == x.period, x.echelon_stock, view=true) #echelon stock at each node
     ech_grp = groupby(ech_df, [:node, :material]) #group by material
     
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network), mat in x.materials
         ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp, orders_grp)
-        push!(x.inv_level, [x.period, n, mat, ilevel]) #update inventory level
-        push!(x.inv_position, [x.period, n, mat, ipos]) #update inventory position
-        update_echelons!(x, n, mat, ipos, ech_grp) #update echelon positions
+        push!(x.inventory_level, [x.period, n, mat, ilevel]) #update inventory level
+        push!(x.inventory_position, [x.period, n, mat, ipos]) #update inventory position
+        update_echelons!(x, n, mat, ipos, ech_grp) #update echelon stocks
     end
 
 end
@@ -389,12 +389,12 @@ end
 """
     initialize_echelons!(x::SupplyChainEnv)
 
-Initialize echelon positions at the current period to 0.
+Initialize echelon stocks at the current period to 0.
 """
 function initialize_echelons!(x::SupplyChainEnv)
     for n in vertices(x.network), mat in x.materials
         if get_prop(x.network, n, :inventory_capacity)[mat] > 0
-            push!(x.ech_position, [x.period, n, mat, 0])
+            push!(x.echelon_stock, [x.period, n, mat, 0])
         end
     end
 end
@@ -431,7 +431,7 @@ end
 """
     update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ech_grp::GroupedDataFrame)
 
-Update echelon positions for current time period.
+Update echelon stocks for current time period.
 """
 function update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ech_grp::GroupedDataFrame)
     for ech in findall(i -> n in i, x.echelons) #identify which echelons have been affected and add to these
@@ -447,7 +447,7 @@ end
 Open markets, apply material demands, and update inventory positions.
 """
 function simulate_markets!(x::SupplyChainEnv)
-    on_hand_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inv_on_hand, view=true) #on_hand inventory at node
+    on_hand_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
     last_dmnd = filter([:period,:arc] => (t,a) -> t == x.period-1 && a[1] == a[2], x.demand, view=true)
     last_d_group = groupby(last_dmnd, [:arc, :material])
@@ -480,11 +480,11 @@ Calculate profit at each node in the network
 """
 function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     #filter data
-    on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inv_on_hand, view=true) #on_hand inventory 
+    on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inventory_on_hand, view=true) #on_hand inventory 
     onhand_grp = groupby(on_hand_df, [:node, :material])
     sales_df = filter([:period, :arc] => (t,a) -> t == x.period && a[1] == a[2], x.demand, view=true) #replenishment orders
     sales_grp = groupby(sales_df, [:arc, :material])
-    pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories
+    pipeline_df = filter(:period => j -> j == x.period, x.inventory_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
 
     #evaluate node profit

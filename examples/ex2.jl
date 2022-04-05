@@ -39,5 +39,5 @@ using StatsPlots
 fig1 = plot(env.demand.period, env.demand.unfulfilled, linetype=:steppost, lab="backlog",
                     xlabel="period", ylabel="level", title="Node 2, Material A")
 #add inventory position
-inv_on_hand = filter(i -> i.level < Inf, env.inv_on_hand)
-plot!(inv_on_hand.period, inv_on_hand.level, linetype=:steppost, lab = "on-hand inventory")
+inventory_on_hand = filter(i -> i.level < Inf, env.inventory_on_hand)
+plot!(inventory_on_hand.period, inventory_on_hand.level, linetype=:steppost, lab = "on-hand inventory")

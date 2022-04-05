@@ -16,7 +16,7 @@ Apply an inventory policy to specify the replinishment orders for each material
 - `min_order_qty::Union{Real, Dict}`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
 """
 function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict;
-                        policy_variable::Union{Dict,Symbol} = :inv_position,
+                        policy_variable::Union{Dict,Symbol} = :inventory_position,
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, StepRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0)
@@ -55,9 +55,9 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict;
     end
 
     #filter data for policy
-    state1_df = filter(:period => j -> j == env.period, env.inv_position, view=true) #inventory position
+    state1_df = filter(:period => j -> j == env.period, env.inventory_position, view=true) #inventory position
     state1_grp = groupby(state1_df, [:node, :material]) #group by node and material
-    state2_df = filter(:period => j -> j == env.period, env.ech_position, view=true) #inventory position
+    state2_df = filter(:period => j -> j == env.period, env.echelon_stock, view=true) #inventory position
     state2_grp = groupby(state2_df, [:node, :material]) #group by node and material
 
     #create action matrix
@@ -79,12 +79,12 @@ function reorder_policy(env::SupplyChainEnv, param1::Dict, param2::Dict;
         reorder = 0
         #check if reorder is triggered & set reorder policy
         pol_var = policy_variable isa Dict ? policy_variable[n] : policy_variable
-        if pol_var == :inv_position
+        if pol_var == :inventory_position
             state = state1_grp[(node = n, material = p)].level[1]
-        elseif pol_var == :ech_position
+        elseif pol_var == :echelon_stock
             state = state2_grp[(node = n, material = p)].level[1]
         else
-            @assert pol_var in [:inv_position, :ech_position] "Policy variable must be either `:inv_position` or `:ech_position`."
+            @assert pol_var in [:inventory_position, :echelon_stock] "Policy variable must be either `:inventory_position` or `:echelon_stock`."
         end
         if state <= param1[n,p]
             pol_type = policy_type isa Dict ? policy_type[n] : policy_type
@@ -117,4 +117,6 @@ function simulate_policy!(env::SupplyChainEnv, args...; kwargs...)
         action = reorder_policy(env, args...; kwargs...)
         (env)(action)
     end
+    
+    calculate_service_measures!(env)
 end
