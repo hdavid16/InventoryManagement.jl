@@ -127,9 +127,7 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
-- `:production_cost::Dict`: unit production cost for each material (`keys`)
 - `:production_capacity::Dict`: maximum production capacity for each material (`keys`).
-- `:production_time::Dict`: production lead time for each material (`keys`).
 
 `Distributors` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`)
@@ -171,16 +169,13 @@ A `SupplyChainEnv` has the following fields:
 - `network::MetaDiGraph`: Supply Chain Network (metagraph)
 - `markets::Array`: list of market nodes
 - `producers::Array`: list of producer nodes
-- `distributors::Array`: list of distribution nodes (excludes end distributors where markets exist)
 - `materials::Array`: list of all material (material) names (strings)
-- `bill_of_materials::Matrix` square matrix with BOM (rows = input materials, cols = output materials; indices follow materials list; positive value is a co-product, negative is a feedstock)
 - `inv_on_hand::DataFrame`: timeseries with on hand inventories @ each node.
 - `inv_level::DataFrame`: timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
 - `inv_pipeline::DataFrame`: timeseries with pipeline inventories on each arc.
 - `inv_position::DataFrame`: timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
 - `shipments::DataFrame`: current shipments and time to arrival for each node
-- `production::DataFrame`: current material production committed to an edge and lead time to ship. Note: byproducts are scheduled to go to the producing node `n` (edge `(n,n)`).
 - `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
 - `profit::DataFrame`: timeseries with profit at each node
 - `reward::Float64`: reward in the system (used for RL)
