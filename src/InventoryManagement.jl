@@ -11,7 +11,8 @@ import StatsBase: mean, std
 @reexport using MetaGraphs
 
 include("environment.jl")
-include("utils.jl")
+include("metrics.jl")
+include("parameters.jl")
 include("actions.jl")
 include("policy.jl")
 include("spaces.jl")

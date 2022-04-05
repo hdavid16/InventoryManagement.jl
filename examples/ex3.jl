@@ -11,11 +11,7 @@ adj_matrix = [0 1 0 0 0;
               0 0 0 0 0]
 net = MetaDiGraph(adj_matrix) # 1 (raw) -> 2 (plant) -> 3 (plant) -> 4 (storage; with demand) -> 5 (retail)
 materials = [:A, :B, :C]
-# bom = [0  0  0; # C -> B -> A
-#       -1  0  0;
-#        0 -1  0]
 set_prop!(net, :materials, materials)
-# set_prop!(net, :bill_of_materials, bom)
 
 ##specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(

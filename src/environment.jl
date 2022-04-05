@@ -7,11 +7,8 @@ abstract type AbstractEnv end
 - `network::MetaDiGraph`: Supply chain network directed graph.
 - `markets::Vector`: Vector of market nodes where demand occurs.
 - `producers::Vector`: Vector of producer nodes where material transformation occurs.
-- `distributors::Vector`: Vector of distribution centers (excludes market nodes).
 - `echelons::Dict`: Dictionary with Vector of nodes downstream of each node in the network (including that node).
 - `materials::Vector`: Vector with the names of all materials in the system.
-- `products::Vector`: Vector with the names of all final products in the system.
-- `bill_of_materials::Array`: Square matrix with BOM (rows = inputs, cols = ouputs); indices follow materials list; row with positive value is a co-product, row with negative value is a input (reactant).
 - `inv_on_hand::DataFrame`: Timeseries with on hand inventories @ each node.
 - `inv_level::DataFrame`: Timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
 - `inv_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
@@ -36,11 +33,8 @@ mutable struct SupplyChainEnv <: AbstractEnv
     network::MetaDiGraph
     markets::Vector
     producers::Vector
-    distributors::Vector
     echelons::Dict
     materials::Vector
-    products::Vector
-    # bill_of_materials::Array
     inv_on_hand::DataFrame
     inv_level::DataFrame
     inv_pipeline::DataFrame
@@ -48,7 +42,6 @@ mutable struct SupplyChainEnv <: AbstractEnv
     ech_position::DataFrame
     replenishments::DataFrame
     shipments::DataFrame
-    # production::DataFrame
     demand::DataFrame
     profit::DataFrame
     reward::Float64
@@ -60,89 +53,34 @@ mutable struct SupplyChainEnv <: AbstractEnv
 end
 
 """
-    SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        discount::Float64=0.0, backlog::Bool=false,
-                        reallocate::Bool=false, evaluate_profit::Bool=true,
-                        capacitated_inventory::Bool=true, seed::Int=0)
+    SupplyChainEnv(
+        network::MetaDiGraph, num_periods::Int;
+        discount::Float64=0.0, backlog::Bool=false,
+        reallocate::Bool=false, evaluate_profit::Bool=true,
+        capacitated_inventory::Bool=true, seed::Int=0
+    )
 
 Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
 """
-function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
-                        discount::Float64=0.0, backlog::Bool=false,
-                        reallocate::Bool=false, evaluate_profit::Bool=true,
-                        capacitated_inventory::Bool=true, seed::Int=0)
+function SupplyChainEnv(
+    network::MetaDiGraph, num_periods::Int;
+    discount::Float64=0.0, backlog::Bool=false,
+    reallocate::Bool=false, evaluate_profit::Bool=true,
+    capacitated_inventory::Bool=true, seed::Int=0
+)
     #copy network (avoids issues when changing say num_periods after the Env was already created)
     net = copy(network)
-    #get main nodes
-    nodes = vertices(net)
-    #get nodes in each echelon
-    echelons = Dict(n => identify_echelons(net, n) for n in nodes)
-    #get main edges
-    arcs = [(e.src,e.dst) for e in edges(net)]
-    #identify nodes and products
-    mats = get_prop(net, :materials)
-    mrkts, plants, dcs, prods = identify_nodes_and_products(net)
+    #get model parameters
+    nodes = vertices(net) #network nodes
+    echelons = Dict(n => identify_echelons(net, n) for n in nodes) #get nodes in each echelon
+    arcs = [(e.src,e.dst) for e in edges(net)] #network edges as Tuples (not Edges)
+    mats = get_prop(net, :materials) #materials
+    mrkts, plants = identify_nodes(net) #identify nodes 
     #check inputs
     check_inputs!(net, nodes, arcs, mrkts, plants, mats, num_periods)
-    # #get bill of materials
-    # bom = get_prop(net, :bill_of_materials)
-    # #get material conversion to products
-    # _, conversion_dict = material_conversion(net)
-    # set_prop!(net, :conversion_dictionary, conversion_dict)
     #create logging dataframes
-    inv_on_hand = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[], :discarded => [])
-    for n in nodes, p in mats
-        init_inv = get_prop(net, n, :initial_inventory)
-        push!(inv_on_hand, (0, n, p, init_inv[p], 0))
-    end
-    inv_pipeline = DataFrame(
-        :period => zeros(Int, length(mats)*length(arcs)),
-        :arc => repeat(arcs, inner = length(mats)),
-        :material => repeat(mats, outer = length(arcs)),
-        :level => zeros(length(mats)*length(arcs))
-    )
-    inv_position = select(inv_on_hand, [:period, :node, :material, :level])
-    inv_level = copy(inv_position)
-    ech_position = DataFrame(:period => Int[], :node => Int[], :material => [], :level => Float64[])
-    for n in nodes, p in mats
-        if get_prop(net, n, :inventory_capacity)[p] > 0 #only update if that node can store that material
-            ech_pos = sum(filter([:node, :material] => (i1, i2) -> i1 in echelons[n] && i2 == p, inv_position).level)
-            push!(ech_position, (0, n, p, ech_pos))
-        end
-    end
-    replenishments = DataFrame(
-        :period => Int[],#zeros(Int, length(mats)*length(arcs)),
-        :arc => Tuple[],#repeat(arcs, inner = length(mats)),
-        :material => Any[],#repeat(mats, outer = length(arcs)),
-        :requested => Float64[],#total amount requested
-        :accepted => Float64[],#zeros(length(mats)*length(arcs)),
-        :lead => Float64[],#zeros(Int, length(mats)*length(arcs)),
-        :unfulfilled => Float64[],#zeros(length(mats)*length(arcs)),
-        :reallocated => Any[]#Any[missing for i in 1:length(mats)*length(arcs)])
-    )
-    shipments = DataFrame(
-        :arc => [],
-        :material => [],
-        :amount => Float64[],
-        :lead => Float64[]
-    )
-    # production = DataFrame(:arc => [],
-    #                        :material => [],
-    #                        :amount => Float64[],
-    #                        :lead => Float64[])
-    demand = DataFrame(
-        :period => Int[],#zeros(Int, length(mats)*length(mrkts)),
-        :node => Int[],#repeat(mrkts, inner = length(mats)),
-        :material => Any[],#repeat(mats, outer = length(mrkts)),
-        :demand => Float64[],#zeros(length(mats)*length(mrkts)),
-        :sold => Float64[],#zeros(length(mats)*length(mrkts)),
-        :unfulfilled => Float64[]#zeros(length(mats)*length(mrkts)))
-    )
-    profit = DataFrame(
-        :period => Int[],#zeros(Int, length(nodes)),
-        :value => Float64[],#zeros(length(nodes)),
-        :node => Int[]#nodes
-    )
+    logging_dfs = create_logging_dfs(net, nodes, arcs, mats, echelons)
+    #initialize other params
     period, reward = 0, 0
     num_periods = num_periods
     options = Dict(
@@ -151,25 +89,14 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
         :evaluate_profit => evaluate_profit,
         :capacitated_inventory => capacitated_inventory
     )
+    #create environment
     env = SupplyChainEnv(
         net, 
         mrkts, 
         plants, 
-        dcs, 
         echelons, 
         mats, 
-        prods, 
-        # bom, 
-        inv_on_hand, 
-        inv_level, 
-        inv_pipeline, 
-        inv_position, 
-        ech_position, 
-        replenishments, 
-        shipments, 
-        # production, 
-        demand,
-        profit, 
+        logging_dfs...,
         reward, 
         period, 
         num_periods, 
@@ -177,7 +104,7 @@ function SupplyChainEnv(network::MetaDiGraph, num_periods::Int;
         options, 
         seed
     )
-
+    #seed randomness
     Random.seed!(env)
 
     return env
@@ -199,17 +126,11 @@ function reset!(env::SupplyChainEnv)
     filter!(i -> i.period == 0, env.demand)
     filter!(i -> i.period == 0, env.profit)
     env.shipments = DataFrame(
-        :arc => [],
-        :material => [],
-        :amount => Float64[],
-        :lead => Int[]
+        arc = [],
+        material = [],
+        amount = Float64[],
+        lead = Int[]
     )
-    # env.production = DataFrame(
-    #     :arc => [],
-    #     :material => [],
-    #     :amount => Float64[],
-    #     :lead => Int[]
-    # )
 
     Random.seed!(env)
 end
@@ -223,3 +144,90 @@ is_terminated(env::SupplyChainEnv) = env.period == env.num_periods
 
 "Set the random seed for a simulation."
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
+
+"""
+    create_logging_dfs(net::MetaDiGraph, nodes::Vector, arcs::Vector, mats::Vector, echelons::Dict)
+
+Create `DataFrames` to log timeseries results.
+"""
+function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, mats::Vector, echelons::Dict)
+    #inventory on hand
+    inv_on_hand = DataFrame(
+        period = Int[], 
+        node = Int[], 
+        material = [], 
+        level = Float64[], 
+        discarded = []
+    )
+    #initialize inventory on hand
+    for n in nodes, p in mats
+        init_inv = get_prop(net, n, :initial_inventory)
+        push!(inv_on_hand, (0, n, p, init_inv[p], 0))
+    end
+
+    #pipeline inventory 
+    inv_pipeline = DataFrame(
+        period = zeros(Int, length(mats)*length(arcs)),
+        arc = repeat(arcs, inner = length(mats)),
+        material = repeat(mats, outer = length(arcs)),
+        level = zeros(length(mats)*length(arcs))
+    )
+
+    #inventory position and level
+    inv_position = select(inv_on_hand, [:period, :node, :material, :level])
+    inv_level = copy(inv_position)
+
+    #echenlon inventory position
+    ech_position = DataFrame(
+        period = Int[], 
+        node = Int[], 
+        material = [], 
+        level = Float64[]
+    )
+    #initialize echelon positions with initial inventory positions
+    for n in nodes, p in mats
+        if get_prop(net, n, :inventory_capacity)[p] > 0 #only update if that node can store that material
+            ech_pos = sum(filter([:node, :material] => (i1, i2) -> i1 in echelons[n] && i2 == p, inv_position).level)
+            push!(ech_position, (0, n, p, ech_pos))
+        end
+    end
+
+    #replenishment orders
+    replenishments = DataFrame(
+        period = Int[],
+        arc = Tuple[],
+        material = Any[],
+        requested = Float64[],
+        accepted = Float64[],
+        lead = Float64[],
+        unfulfilled = Float64[],
+        reallocated = Any[]
+    )
+
+    #material shipments
+    shipments = DataFrame(
+        arc = [],
+        material = [],
+        amount = Float64[],
+        lead = Float64[]
+    )
+
+    #finished good demands
+    demand = DataFrame(
+        period = Int[],
+        node = Int[],
+        material = Any[],
+        demand = Float64[],
+        sold = Float64[],
+        unfulfilled = Float64[]
+    )
+
+    #profit
+    profit = DataFrame(
+        period = Int[],
+        value = Float64[],
+        node = Int[]
+    )
+
+    return inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, replenishments, shipments, demand, profit
+end
