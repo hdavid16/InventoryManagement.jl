@@ -134,8 +134,8 @@ function check_bill_of_materials!(network::MetaDiGraph, n::Int)
     param = get_prop(network, n, :bill_of_materials)
     #create a NamedArray from a BOM Dictionary
     if param isa Dict
-        i = [first(k) for k in keys(param)] #input materials
-        j = [last(k) for k in keys(param)] #output materials
+        i = unique(first.(keys(param))) #input materials
+        j = unique(last.(keys(param))) #output materials
         bom = NamedArray( #initialize named array
             zeros(length(i),length(j)),
             (i,j),
