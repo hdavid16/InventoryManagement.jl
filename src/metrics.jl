@@ -8,8 +8,8 @@ NOTE: Not suported when there is more than 1 supplier and reallocation is allowe
 """
 function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRange, Vector, Dict} = 1)
     #merge demand and replenishment tables
-    demand_filt = filter(i -> i.quantity > 0, env.orders) #filter out times with no demand at markets
-    replenish_filt = filter(i -> i.quantity > 0, env.orders)
+    demand_filt = filter(i -> i.quantity > 0, env.demand) #filter out times with no demand at markets
+    replenish_filt = filter(i -> i.quantity > 0, env.demand)
     select!(replenish_filt, #convert replenishment table into same format as demand table for merging
         :period,
         :arc => ByRow(first) => :node,

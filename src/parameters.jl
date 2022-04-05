@@ -69,7 +69,7 @@ function check_inputs!(
                 elseif key == :demand_sequence
                     @assert length(param) == num_periods "The demand sequence for material $mat at node $obj must be a vector with $num_periods entries."
                 else
-                    @assert param >= 0 "Parameter $key for material $mat at $obj must be non-negative."
+                    @assert param isa Real && param >= 0 "Parameter $key for material $mat at $obj must be a non-negative `Real`."
                 end
             end
         end
@@ -97,7 +97,7 @@ Create a dictionary with the parameter keys for each node/arc in the network
 """
 function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
     #lists of parameter keys
-    all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
+    all_keys = [:initial_inventory, :inventory_capacity, :holding_cost, :service_time]
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :demand_penalty, :demand_sequence]
     plant_keys = [:bill_of_materials, :production_capacity]
     arc_keys = [:sales_price, :transportation_cost, :pipeline_holding_cost, :lead_time]

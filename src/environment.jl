@@ -14,12 +14,15 @@ abstract type AbstractEnv end
 - `inv_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
 - `inv_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `ech_position::DataFrame`: Timeseries with echelon inventory position @ each node.
-- `orders::DataFrame`: Timeseries with replenishment orders and market demand placed on each arc.
-- `shipments::DataFrame`: Temp table with active shipments and time to arrival on each arc.
+- `demand::DataFrame`: Timeseries with replenishment orders and market demand placed on each arc.
+- `all_orders::DataFrame`: History of all orders received.
+- `orders::DataFrame`: Temporary table with outstanding orders.
+- `shipments::DataFrame`: Temporary table with active shipments and time to arrival on each arc.
 - `profit::DataFrame`: Timeseries with profit @ each node.
 - `reward::Float64`: Final reward in the system (used for RL)
 - `period::Int`: Current period in the simulation.
 - `num_periods::Int`: Number of periods in the simulation.
+- `num_orders::Int`: Number of orders in the system.
 - `discount::Float64`: Time discount factor (i.e. interest rate).
 - `options::Dict`: Simulation options
   - `backlog::Bool`: Indicator if backlogging is allowed.
@@ -39,12 +42,15 @@ mutable struct SupplyChainEnv <: AbstractEnv
     inv_pipeline::DataFrame
     inv_position::DataFrame
     ech_position::DataFrame
+    demand::DataFrame
+    all_orders::DataFrame
     orders::DataFrame
     shipments::DataFrame
     profit::DataFrame
     reward::Float64
     period::Int
     num_periods::Int
+    num_orders::Int
     discount::Float64
     options::Dict
     seed::Int
@@ -79,7 +85,7 @@ function SupplyChainEnv(
     #create logging dataframes
     logging_dfs = create_logging_dfs(net, nodes, arcs, mats, echelons)
     #initialize other params
-    period, reward = 0, 0
+    period, reward, num_orders = 0, 0, 0
     num_periods = num_periods
     options = Dict(
         :backlog => backlog, 
@@ -98,6 +104,7 @@ function SupplyChainEnv(
         reward, 
         period, 
         num_periods, 
+        num_orders,
         discount, 
         options, 
         seed
@@ -120,13 +127,27 @@ function reset!(env::SupplyChainEnv)
     filter!(i -> i.period == 0, env.inv_pipeline)
     filter!(i -> i.period == 0, env.inv_position)
     filter!(i -> i.period == 0, env.ech_position)
-    filter!(i -> i.period == 0, env.orders)
+    filter!(i -> i.period == 0, env.demand)
     filter!(i -> i.period == 0, env.profit)
     env.shipments = DataFrame(
         arc = [],
         material = [],
         amount = Float64[],
         lead = Int[]
+    )
+    env.orders = DataFrame(
+        created = Int[],
+        arc = Tuple[],
+        material = [],
+        quantity = [],
+        due = []
+    )
+    env.all_orders = DataFrame(
+        created = Int[],
+        arc = Tuple[],
+        material = [],
+        quantity = [],
+        fulfilled = []
     )
 
     Random.seed!(env)
@@ -190,7 +211,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     end
 
     #replenishment and customer sales orders
-    orders = DataFrame(
+    demand = DataFrame(
         period = Int[],
         arc = Tuple[],
         material = Any[],
@@ -199,6 +220,25 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         lead = Float64[],
         unfulfilled = Float64[],
         reallocated = Any[]
+    )
+
+    #outstanding orders
+    orders = DataFrame(
+        id = Int[],
+        arc = Tuple[],
+        material = [],
+        quantity = [],
+        due = []
+    )
+
+    #all system orders
+    all_orders = DataFrame(
+        id = Int[],
+        created = Int[],
+        arc = Tuple[],
+        material = [],
+        quantity = [],
+        fulfilled = []
     )
 
     #material shipments
@@ -216,5 +256,5 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         node = Int[]
     )
 
-    return inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, orders, shipments, profit
+    return inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, demand, all_orders, orders, shipments, profit
 end
