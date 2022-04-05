@@ -114,7 +114,7 @@ function place_requests!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
                 amount = add_backlog!(x, a..., mat, amount, sup_priority, last_orders_grp)
                 #continue to next iteration if request is 0
                 if iszero(amount) 
-                    push!(x.replenishments, [x.period, a, mat, 0, 0, 0, 0, missing])
+                    push!(x.orders, [x.period, a, mat, 0, 0, 0, 0, missing])
                     continue 
                 end
                 #accept or adjust requests
@@ -128,11 +128,11 @@ function place_requests!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
                 #store shipments and lead times
                 if accepted > 0 #update active shipments
                     if amount > 0
-                        x.replenishments[end, :unfulfilled] = amount
-                        x.replenishments[end, :reallocated] = new_alloc
+                        x.orders[end, :unfulfilled] = amount
+                        x.orders[end, :reallocated] = new_alloc
                     end
                 else #no request made
-                    push!(x.replenishments, [x.period, a, mat, amount, 0, 0, amount, new_alloc])
+                    push!(x.orders, [x.period, a, mat, amount, 0, 0, amount, new_alloc])
                 end
             end
         end
@@ -152,7 +152,7 @@ Returns a view of a grouped dataframe of the replenishment orders for the previo
 function previous_orders(x::SupplyChainEnv)
     last_orders_grp = missing
     if x.options[:backlog] && x.period > 1
-        last_orders_df = filter(:period => i -> i == x.period-1, x.replenishments, view=true) #replenishment orders from previous period
+        last_orders_df = filter([:period,:arc] => (t,a) -> t == x.period-1 && a[1] != a[2], x.orders, view=true) #replenishment orders from previous period
         last_orders_grp = groupby(last_orders_df, [:arc, :material]) #group by material and arc
     end
 
@@ -175,7 +175,7 @@ function exit_order(x::SupplyChainEnv, arcs::Vector, last_orders_grp::Union{Miss
                 backlog = last_orders_grp[(arc = a, material = mat)].unfulfilled[end]
             end
         end
-        push!(x.replenishments, [x.period, a, mat, 0, 0, 0, backlog, missing])
+        push!(x.orders, [x.period, a, mat, 0, 0, 0, backlog, missing])
     end
 end
 
@@ -220,7 +220,7 @@ function fulfill_from_stock!(
         amount -= accepted_inv #get new amount pending
         supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
         #ship material
-        ship!(x, src, dst, mat, accepted_inv, original_amount, lead, pipeline_grp)
+        make_shipment!(x, src, dst, mat, accepted_inv, original_amount, lead, pipeline_grp)
     end
 
     return amount, accepted_inv
@@ -266,14 +266,14 @@ function fulfill_from_production!(
     if accepted_prod > 0
         original_amount = amount
         amount -= accepted_prod #update pending amount
-        ship!(x, src, dst, mat, accepted_prod, original_amount, lead, pipeline_grp) #schedule shipment
+        make_shipment!(x, src, dst, mat, accepted_prod, original_amount, lead, pipeline_grp) #schedule shipment
         capacities[src][mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
         for rmat in rmat_names #reactant consumed
             supply_grp[(node = src, material = rmat)].level[1] += accepted_prod * bom[rmat,mat]
         end
         for cmat in cmat_names #coproducts scheduled for production
             coproduction = accepted_prod*bom[cmat,mat]
-            ship!(x, src, dst, cmat, coproduction, missing, lead, pipeline_grp) #schedule shipment of co-product (original production is missing since this is a coproduct)
+            make_shipment!(x, src, dst, cmat, coproduction, missing, lead, pipeline_grp) #schedule shipment of co-product (original production is missing since this is a coproduct)
             capacities[src][cmat] -= coproduction #update coproduct production capacity
         end
     end
@@ -282,13 +282,13 @@ function fulfill_from_production!(
 end
 
 """
-    ship!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, original_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame, delay::Float64 = 0.)
+    make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, original_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame, delay::Float64 = 0.)
 
 Schedule shipment of material.
 """
-function ship!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, original_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame, delay::Float64 = 0.)
+function make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, original_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame, delay::Float64 = 0.)
     push!(x.shipments, [(src,dst), mat, accepted_amount, lead + delay])
-    push!(x.replenishments, [x.period, (src,dst), mat, original_amount, accepted_amount, lead + delay, 0, missing])
+    push!(x.orders, [x.period, (src,dst), mat, original_amount, accepted_amount, lead + delay, 0, missing])
     pipeline_grp[(arc = (src, dst), material = mat)].level[1] += accepted_amount #add inventory to pipeline
 end
 
@@ -371,9 +371,7 @@ function update_inventories!(x::SupplyChainEnv)
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
     pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, :material) #group by material
-    dmnd_df = filter(:period => i -> i == x.period, x.demand, view=true) #demand at markets
-    dmnd_grp = groupby(dmnd_df, [:node, :material]) #group by node and material
-    orders_df = filter([:period, :reallocated] => (i1, i2) -> i1 == x.period && ismissing(i2), x.replenishments, view=true) #replenishment orders from current period
+    orders_df = filter([:period, :reallocated] => (i1, i2) -> i1 == x.period && ismissing(i2), x.orders, view=true) #replenishment orders from current period
     orders_grp = groupby(orders_df, :material) #group by material
 
     #initialize echelon inventory positions
@@ -383,13 +381,10 @@ function update_inventories!(x::SupplyChainEnv)
     
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network), mat in x.materials
-        ilevel, ipos0, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp, dmnd_grp, orders_grp)
-        #update inventory
-        push!(x.inv_level, [x.period, n, mat, ilevel]) 
-        #update inventory
-        push!(x.inv_position, [x.period, n, mat, ipos]) 
-        #update echelons
-        update_echelons!(x, n, mat, ipos, ipos0, ech_grp)#, dmnd_dict, conversion_dict)
+        ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp, orders_grp)
+        push!(x.inv_level, [x.period, n, mat, ilevel]) #update inventory level
+        push!(x.inv_position, [x.period, n, mat, ipos]) #update inventory position
+        update_echelons!(x, n, mat, ipos, ech_grp) #update echelon positions
     end
 
 end
@@ -408,46 +403,43 @@ function initialize_echelons!(x::SupplyChainEnv)
 end
 
 """
-    inventory_components(x::SupplyChainEnv, n::Int, mat::Symbol, pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, dmnd_grp::GroupedDataFrame, orders_grp::GroupedDataFrame)
+    inventory_components(
+        x::SupplyChainEnv, n::Int, mat::Symbol, 
+        pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
+        orders_grp::GroupedDataFrame
+    )
 
-Extract components to determine inventory paramters.
+Extract components to determine inventory level and position.
 """
-function inventory_components(x::SupplyChainEnv, n::Int, mat::Symbol, pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, dmnd_grp::GroupedDataFrame, orders_grp::GroupedDataFrame)
-    # making = reduce(+,filter([:arc, :material] => (j1, j2) -> j1[end] == n && j2 == mat, x.production, view=true).amount, init=0) #commited production order
-    upstream = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = mat,)], view=true).level) #in-transit inventory
+function inventory_components(
+    x::SupplyChainEnv, n::Int, mat::Symbol, 
+    pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
+    orders_grp::GroupedDataFrame
+)
+    pipeline = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = mat,)], view=true).level) #in-transit inventory
     onhand = onhand_grp[(node = n, material = mat)].level[1] #on_hand inventory
     backorder = 0 #initialize replenishment orders placed to suppliers that are backlogged
     backlog = 0 #initialize backlog for orders placed by successors
     if x.options[:backlog]
-        if n in x.markets #find demand backlog
-            backlog += dmnd_grp[(node = n, material = mat)].unfulfilled[1]
-        else #find any unfulfilled replenishment request that was not reallocated
-            backlog += sum(filter(:arc => i -> i[1] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
-        end
-        backorder = sum(filter(:arc => i -> i[end] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
+        backlog = sum(filter(:arc => i -> i[1] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
+        backorder = sum(filter(:arc => i -> i[2] == n && i[2] != i[1], orders_grp[(material = mat,)], view=true).unfulfilled)
     end
     ilevel = onhand - backlog #inventory level
-    ipos0 = onhand + upstream + backorder #inventory position without backlog
-    # ipos0 = onhand + making + upstream + backorder #inventory position without backlog
-    ipos = ipos0 - backlog #include backlog in inventory position
+    iorder = pipeline + backorder #inventory on order
+    ipos = ilevel + iorder #inventory position
 
-    return ilevel, ipos0, ipos
+    return ilevel, ipos
 end
 
 """
-    update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ipos0::Float64, ech_grp::GroupedDataFrame)
+    update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ech_grp::GroupedDataFrame)
 
 Update echelon positions for current time period.
 """
-function update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ipos0::Float64, ech_grp::GroupedDataFrame)#, dmnd_dict::Dict, conversion_dict::Dict)
-    #identify which echelons have been affected and add to these
-    for ech in findall(i -> n in i, x.echelons)
+function update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ech_grp::GroupedDataFrame)
+    for ech in findall(i -> n in i, x.echelons) #identify which echelons have been affected and add to these
         if get_prop(x.network, ech, :inventory_capacity)[mat] > 0 #only add to echelon if that node holds that material
-            if n in x.markets #backlog is only added for market nodes (to avoid double counting with backorder)
-                ech_grp[(node = ech, material = mat)].level[1] += ipos
-            else
-                ech_grp[(node = ech, material = mat)].level[1] += ipos0
-            end
+            ech_grp[(node = ech, material = mat)].level[1] += ipos
         end
     end
 end
@@ -458,25 +450,28 @@ end
 Open markets, apply material demands, and update inventory positions.
 """
 function simulate_markets!(x::SupplyChainEnv)
-    on_hand_df = filter(:period => j -> j == x.period, x.inv_on_hand, view=true) #on_hand inventory at node
+    on_hand_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inv_on_hand, view=true) #on_hand inventory at node
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
-    last_dmnd = filter(:period => i -> i == x.period-1, x.demand, view=true)
-    last_d_group = groupby(last_dmnd, [:node, :material])
-    for n in x.markets, mat in x.materials
-        dmnd_seq = get_prop(x.network, n, :demand_sequence)[mat]
-        dprob = Bernoulli(1/get_prop(x.network, n, :demand_frequency)[mat]) #demand probability (probability of ordering is 1/demand period; aka, once every x days)
-        dmnd = get_prop(x.network, n, :demand_distribution)[mat] #demand distribution
-        q = iszero(dmnd_seq) ? rand(dprob) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
-        if x.options[:backlog] && x.period > 1 #add previous backlog to the quantity requested at the market
-            q += last_d_group[(node = n, material = mat)].unfulfilled[1]
+    last_dmnd = filter([:period,:arc] => (t,a) -> t == x.period-1 && a[1] == a[2], x.orders, view=true)
+    last_d_group = groupby(last_dmnd, [:arc, :material])
+    for n in x.markets
+        dmnd_seq_dict = get_prop(x.network, n, :demand_sequence)
+        dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
+        dmnd_dist_dict = get_prop(x.network, n, :demand_distribution)
+        for mat in x.materials
+            dmnd_seq = dmnd_seq_dict[mat]
+            dprob = Bernoulli(1/dmnd_freq_dict[mat]) #demand probability (probability of ordering is 1/demand period; aka, once every x days)
+            dmnd = dmnd_dist_dict[mat] #demand distribution
+            q = iszero(dmnd_seq) ? rand(dprob) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
+            if x.options[:backlog] && x.period > 1 #add previous backlog to the quantity requested at the market
+                q += last_d_group[(arc = (n,n), material = mat)].unfulfilled[1]
+            end
+            inv = onhand_grp[(node = n, material = mat)].level[1] #on hand inventory
+            sold = min(q, inv) #sales
+            unfilled = max(q - inv, 0.) #unfilfilled
+            push!(x.orders, [x.period, (n,n), mat, q, sold, 0, unfilled, missing]) #update df
+            onhand_grp[(node = n, material = mat)].level[1] -= sold #update end of period inventory (subtract sales)
         end
-        inv = onhand_grp[(node = n, material = mat)].level[1]
-        sold = min(q, inv) #sales
-        unfilled = max(q - inv, 0.) #unfilfilled
-        push!(x.demand, [x.period, n, mat, q, sold, unfilled]) #update df
-
-        #update end of period inventory (subtract sales)
-        onhand_grp[(node = n, material = mat)].level[1] -= sold
     end
 end
 
@@ -490,10 +485,8 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     #filter data
     on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inv_on_hand, view=true) #on_hand inventory 
     onhand_grp = groupby(on_hand_df, [:node, :material])
-    orders_df = filter(:period => i -> i == x.period, x.replenishments, view=true) #replenishment orders
-    orders_grp = groupby(orders_df, :material)
-    sales_df = filter(:period => j -> j == x.period, x.demand, view=true) #sales at markets
-    sales_grp = groupby(sales_df, [:node, :material])
+    sales_df = filter([:period, :arc] => (t,a) -> t == x.period && a[1] == a[2], x.orders, view=true) #replenishment orders
+    sales_grp = groupby(sales_df, [:arc, :material])
     pipeline_df = filter(:period => j -> j == x.period, x.inv_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
 
@@ -501,12 +494,8 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     for n in vertices(x.network)
         profit = 0. #initialize node profit
         for mat in x.materials
-            #get costs
             #holding cost
-            holding_cost = holding_costs(x, n, mat, onhand_grp)
-            #production cost
-            # if n in x.producers
-            #     profit += production_costs(x, n, mat, orders_grp)
+            profit += holding_costs(x, n, mat, onhand_grp)
             #sales profit at markets (and penalize for unfulfilled demand)
             if n in x.markets
                 profit += sum(sales_and_penalties(x, n, mat, sales_grp))
@@ -545,22 +534,6 @@ function holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::Group
     return c
 end
 
-# """
-#     production_costs(x::SupplyChainEnv, n::Int, mat::Symbol, orders_grp::GroupedDataFrame)
-
-# Calculate produciton costs (negative).
-# """
-# function production_costs(x::SupplyChainEnv, n::Int, mat::Symbol, orders_grp::GroupedDataFrame)
-#     prod_cost = get_prop(x.network, n, :production_cost)[mat]
-#     c = 0
-#     if prod_cost > 0
-#         produced = sum(filter([:arc] => j -> j[1] == n, orders_grp[(material = mat,)], view=true).accepted)
-#         c -= prod_cost * produced
-#     end
-
-#     return c
-# end
-
 """
     sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
 
@@ -569,10 +542,9 @@ Calculate sales (positive) and unfulfilled demand penalties (negative)
 function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
     sales_price = get_prop(x.network, n, :sales_price)[mat]
     dmnd_penalty = get_prop(x.network, n, :demand_penalty)[mat]
-    s = 0 #sales
-    p = 0 #penalties
+    s, p = 0, 0 #sales and penalties
     if sales_price > 0 || dmnd_penalty > 0
-        sold, unfilled = sales_grp[(node = n, material = mat)][1, [:sold, :unfulfilled]]
+        sold, unfilled = sales_grp[(arc = (n,n), material = mat)][1, [:fulfilled, :unfulfilled]]
         s += sales_price * sold
         p -= dmnd_penalty * unfilled
     end

@@ -76,17 +76,17 @@ function check_inputs!(
     end
 
     truncate_flag && @warn """
-        One or more probabilistic distributions allows negative values. 
-        The distribution(s) will be truncated to allow only positive values. 
-        Note, this will shift the mean of the truncated distribution(s).
+    One or more probabilistic distributions allows negative values. 
+    The distribution(s) will be truncated to allow only positive values. 
+    Note, this will shift the mean of the truncated distribution(s).
     """
     roundoff_flag && @warn """
-        One or more lead time distributions are not discrete. 
-        Round-off error will occur because the simulation uses discrete time.
+    One or more lead time distributions are not discrete. 
+    Round-off error will occur because the simulation uses discrete time.
     """
     replace_flag && @warn """
-        One or more probabilistic distributions passed has zero variance. 
-        It has been replaced with its mean value.
+    One or more probabilistic distributions passed has zero variance. 
+    It has been replaced with its mean value.
     """
 end
 

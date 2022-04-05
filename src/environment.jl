@@ -14,9 +14,8 @@ abstract type AbstractEnv end
 - `inv_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
 - `inv_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `ech_position::DataFrame`: Timeseries with echelon inventory position @ each node.
-- `replenishments::DataFrame`: Timeseries with replenishment orders placed on each arc.
+- `orders::DataFrame`: Timeseries with replenishment orders and market demand placed on each arc.
 - `shipments::DataFrame`: Temp table with active shipments and time to arrival on each arc.
-- `demand::DataFrame`: Timeseries with realization of demand at each market, and amounts sold, unfulfilled demand, and backlog.
 - `profit::DataFrame`: Timeseries with profit @ each node.
 - `reward::Float64`: Final reward in the system (used for RL)
 - `period::Int`: Current period in the simulation.
@@ -40,9 +39,8 @@ mutable struct SupplyChainEnv <: AbstractEnv
     inv_pipeline::DataFrame
     inv_position::DataFrame
     ech_position::DataFrame
-    replenishments::DataFrame
+    orders::DataFrame
     shipments::DataFrame
-    demand::DataFrame
     profit::DataFrame
     reward::Float64
     period::Int
@@ -122,8 +120,7 @@ function reset!(env::SupplyChainEnv)
     filter!(i -> i.period == 0, env.inv_pipeline)
     filter!(i -> i.period == 0, env.inv_position)
     filter!(i -> i.period == 0, env.ech_position)
-    filter!(i -> i.period == 0, env.replenishments)
-    filter!(i -> i.period == 0, env.demand)
+    filter!(i -> i.period == 0, env.orders)
     filter!(i -> i.period == 0, env.profit)
     env.shipments = DataFrame(
         arc = [],
@@ -192,13 +189,13 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         end
     end
 
-    #replenishment orders
-    replenishments = DataFrame(
+    #replenishment and customer sales orders
+    orders = DataFrame(
         period = Int[],
         arc = Tuple[],
         material = Any[],
-        requested = Float64[],
-        accepted = Float64[],
+        quantity = Float64[], 
+        fulfilled = Float64[],
         lead = Float64[],
         unfulfilled = Float64[],
         reallocated = Any[]
@@ -212,16 +209,6 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         lead = Float64[]
     )
 
-    #finished good demands
-    demand = DataFrame(
-        period = Int[],
-        node = Int[],
-        material = Any[],
-        demand = Float64[],
-        sold = Float64[],
-        unfulfilled = Float64[]
-    )
-
     #profit
     profit = DataFrame(
         period = Int[],
@@ -229,5 +216,5 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         node = Int[]
     )
 
-    return inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, replenishments, shipments, demand, profit
+    return inv_on_hand, inv_level, inv_pipeline, inv_position, ech_position, orders, shipments, profit
 end

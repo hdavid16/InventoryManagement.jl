@@ -8,14 +8,14 @@ NOTE: Not suported when there is more than 1 supplier and reallocation is allowe
 """
 function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRange, Vector, Dict} = 1)
     #merge demand and replenishment tables
-    demand_filt = filter(i -> i.demand > 0, env.demand) #filter out times with no demand at markets
-    replenish_filt = filter(i -> i.requested > 0, env.replenishments)
+    demand_filt = filter(i -> i.quantity > 0, env.orders) #filter out times with no demand at markets
+    replenish_filt = filter(i -> i.quantity > 0, env.orders)
     select!(replenish_filt, #convert replenishment table into same format as demand table for merging
         :period,
         :arc => ByRow(first) => :node,
         :material,
-        :requested => :demand,
-        :accepted => :sold,
+        :quantity => :demand,
+        :fulfilled => :sold,
         :unfulfilled
     )
     orders = vcat(demand_filt, replenish_filt) #merge two tables
@@ -25,11 +25,9 @@ function service_measures(env::SupplyChainEnv; review_period::Union{Int, StepRan
     for row in eachrow(filter(i -> i.node in env.producers, orders))
         bom = get_prop(env.network, row.node, :bill_of_materials)
         col = row.material
-        # col = findfirst(i -> i == row.material, env.materials)
         row_mats = names(bom,1)
-        for id in findall(i -> i < 0, bom[:,col])#findall(i -> i < 0, bom[:,col])
-            push!(orders, (row.period, row.node, row_mats[id], -row.demand*bom[id,col], -row.sold*bom[id,col], -row.unfulfilled*bom[id,col]))
-            # push!(orders, (row.period, row.node, env.materials[id], -row.demand*bom[id,col], -row.sold*bom[id,col], -row.unfulfilled*bom[id,col]))
+        for id in findall(i -> i < 0, bom[:,col])
+            push!(orders, (row.period, row.node, row_mats[id], -row.quantity*bom[id,col], -row.sold*bom[id,col], -row.unfulfilled*bom[id,col]))
         end
     end
 
