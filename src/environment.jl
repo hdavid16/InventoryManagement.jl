@@ -15,8 +15,8 @@ abstract type AbstractEnv end
 - `inventory_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
 - `echelon_stock::DataFrame`: Timeseries with echelon inventory position @ each node.
 - `demand::DataFrame`: Timeseries with replenishment orders and market demand placed on each arc.
-- `all_orders::DataFrame`: History of all orders received.
-- `orders::DataFrame`: Temporary table with outstanding orders.
+- `orders::DataFrame`: History of all orders received.
+- `open_orders::DataFrame`: Temporary table with outstanding orders.
 - `shipments::DataFrame`: Temporary table with active shipments and time to arrival on each arc.
 - `profit::DataFrame`: Timeseries with profit @ each node.
 - `metrics::DataFrame`: Service metrics (service level and fill rate) for each supplier and material.
@@ -28,8 +28,9 @@ abstract type AbstractEnv end
 - `options::Dict`: Simulation options
   - `backlog::Bool`: Indicator if backlogging is allowed.
   - `reallocate::Bool`: Indicator if unfulfilled requests should be reallocated to alternate suppliers.
-  - `evaluate_profit::Bool`: Indicator if the profit should be evaluated at each node
-  - `capacitated_inventory::Bool`: Indicator if inventory limits should be enforced
+  - `evaluate_profit::Bool`: Indicator if the profit should be evaluated at each node.
+  - `capacitated_inventory::Bool`: Indicator if inventory limits should be enforced.
+  - `guaranteed_service::Bool`: Indicator if simulation should force lost sales after service time expires.
 - `seed::Int`: Random seed.
 """
 mutable struct SupplyChainEnv <: AbstractEnv
@@ -44,8 +45,8 @@ mutable struct SupplyChainEnv <: AbstractEnv
     inventory_position::DataFrame
     echelon_stock::DataFrame
     demand::DataFrame
-    all_orders::DataFrame
     orders::DataFrame
+    open_orders::DataFrame
     shipments::DataFrame
     profit::DataFrame
     metrics::DataFrame
@@ -72,7 +73,8 @@ function SupplyChainEnv(
     network::MetaDiGraph, num_periods::Int;
     discount::Float64=0.0, backlog::Bool=false,
     reallocate::Bool=false, evaluate_profit::Bool=true,
-    capacitated_inventory::Bool=true, seed::Int=0
+    capacitated_inventory::Bool=true, guaranteed_service::Bool=false,
+    seed::Int=0
 )
     #copy network (avoids issues when changing say num_periods after the Env was already created)
     net = copy(network)
@@ -89,11 +91,15 @@ function SupplyChainEnv(
     #initialize other params
     period, reward, num_orders = 0, 0, 0
     num_periods = num_periods
+    if guaranteed_service 
+        backlog = true #override backlog if guaranteed_service
+    end
     options = Dict(
         :backlog => backlog, 
         :reallocate => reallocate, 
         :evaluate_profit => evaluate_profit,
-        :capacitated_inventory => capacitated_inventory
+        :capacitated_inventory => capacitated_inventory,
+        :guaranteed_service => guaranteed_service
     )
     #create environment
     env = SupplyChainEnv(
@@ -137,14 +143,14 @@ function reset!(env::SupplyChainEnv)
         amount = Float64[],
         lead = Int[]
     )
-    env.orders = DataFrame(
+    env.open_orders = DataFrame(
         created = Int[],
         arc = Tuple[],
         material = [],
         quantity = [],
         due = []
     )
-    env.all_orders = DataFrame(
+    env.orders = DataFrame(
         created = Int[],
         arc = Tuple[],
         material = [],
@@ -225,7 +231,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     )
 
     #outstanding orders
-    orders = DataFrame(
+    open_orders = DataFrame(
         id = Int[],
         arc = Tuple[],
         material = [],
@@ -234,7 +240,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     )
 
     #all system orders
-    all_orders = DataFrame(
+    orders = DataFrame(
         id = Int[],
         created = Int[],
         arc = Tuple[],
@@ -261,5 +267,5 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     #metrics
     metrics = DataFrame()
 
-    return inventory_on_hand, inventory_level, inventory_pipeline, inventory_position, echelon_stock, demand, all_orders, orders, shipments, profit, metrics
+    return inventory_on_hand, inventory_level, inventory_pipeline, inventory_position, echelon_stock, demand, orders, open_orders, shipments, profit, metrics
 end

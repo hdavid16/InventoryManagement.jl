@@ -35,7 +35,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #move active shipments forward one period
     x.shipments.lead .-= 1
     #decrease time until due date for active orders by one period
-    x.orders.due .-= 1
+    x.open_orders.due .-= 1
     #place requests
     place_orders!(x, act, arcs)
     #update on hand and pipeline inventories due to arrived shipments
@@ -120,15 +120,19 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
                 end
                 #create order and save service time
                 x.num_orders += 1 #create new order
-                push!(x.all_orders, [x.num_orders, x.period, a, mat, amount, []]) #update order history
+                push!(x.orders, [x.num_orders, x.period, a, mat, amount, []]) #update order history
                 service_time = get_prop(x.network, sup, :service_time)[mat] #get service time
-                push!(x.orders, [x.num_orders, a, mat, amount, service_time]) #add order to temp order df
-                sort!(x.orders, [:due, :id]) #sort by service time and creation date (serve orders with lowest service time, ranked by order age)
+                push!(x.open_orders, [x.num_orders, a, mat, amount, service_time]) #add order to temp order df
+                sort!(x.open_orders, [:due, :id]) #sort by service time and creation date (serve orders with lowest service time, ranked by order age)
                 #try to fulfill order from stock
                 fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
                 #try to fulfill order from production
                 if sup in x.producers
                     fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
+                end
+                #enforce guaranteed_service operation
+                if x.options[:guaranteed_service] #any open orders with non-positive relative due date (0 service time) become lost sales
+                    filter!(:due => t -> t > 0, x.open_orders)
                 end
             end
         end
@@ -155,10 +159,10 @@ end
 """
     calculate_backlog(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol)
 
-Calculate quantity of material `mat` backlogged on the arc (`sup`,`req`).
+Calculate quantity of material `mat` backlogged on the arc (`sup`,`req`) (includes open orders).
 """
 function calculate_backlog(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol)
-    due_orders = filter([:arc, :material, :due] => (a,m,t) -> t <= 0 && a == (sup,req) && m == mat, x.orders, view=true)
+    due_orders = filter([:arc, :material] => (a,m) -> a == (sup,req) && m == mat, x.open_orders, view=true)
     backlog = reduce(+, due_orders.quantity; init = 0)
     
     return backlog
@@ -180,22 +184,22 @@ function fulfill_from_stock!(
     supply = supply_grp[(node = src, material = mat)].level[1]
     
     #loop through orders
-    orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.orders, view = true)
+    orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.open_orders, view = true)
     for row in eachrow(orders_df)
         order_amount = row.quantity
         accepted_inv = min(order_amount, supply) #amount fulfilled from inventory
         if accepted_inv > 0
-            row.quantity -= accepted_inv #update x.orders (deduct fulfilled part of the order)
-            push!(x.all_orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_inv)) #update fulfilled column in order history (date, supplier, amount fulfilled)
+            row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
+            push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_inv)) #update fulfilled column in order history (date, supplier, amount fulfilled)
             supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
             make_shipment!(x, src, dst, mat, accepted_inv, order_amount, lead, pipeline_grp) #ship material
         end
-        if row.quantity > 0 && row.due <= 0 && !in(src, x.producers) #if some amount of the order is due and wasn't fulfilled try to reallocate (only if it is not a plant since the plant will try to fulfill from production next)
+        if row.quantity > 0 && row.due <= 0 && !in(src, x.producers) #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate (only if it is not a plant since the plant will try to fulfill from production next)
             update_demand_df!(x, src, dst, mat, accepted_inv, row)
         end
     end
-    #remove any fulfilled orders from x.orders
-    filter!(:quantity => q -> q > 0, x.orders) 
+    #remove any fulfilled orders from x.open_orders
+    filter!(:quantity => q -> q > 0, x.open_orders) 
 end
 
 """
@@ -218,14 +222,14 @@ function fulfill_from_production!(
     cmat_names = names(bom,1)[cmats] #names of co-products
 
     #loop through orders
-    orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.orders, view = true)
+    orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.open_orders, view = true)
     for row in eachrow(orders_df)
         cap_and_sup = get_capacity_and_supply(src, mat, bom, rmat_names, cmat_names, capacities, supply_grp)
         order_amount = row.quantity #amount requested in order
         accepted_prod = min(order_amount, cap_and_sup...) #fulfill remaining with available capacity
         if accepted_prod > 0
-            row.quantity -= accepted_prod #update x.orders (deduct fulfilled quantity)
-            push!(x.all_orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_prod)) #update fulfilled column in order history (date, supplier, and amount fulfilled)
+            row.quantity -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
+            push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_prod)) #update fulfilled column in order history (date, supplier, and amount fulfilled)
             capacities[src][mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
             for rmat in rmat_names #reactant consumed
                 supply_grp[(node = src, material = rmat)].level[1] += accepted_prod * bom[rmat,mat]
@@ -237,12 +241,12 @@ function fulfill_from_production!(
                 make_shipment!(x, src, dst, cmat, coproduction, 0, lead, pipeline_grp) #schedule shipment of co-product (original order amount is 0 since this is a coproduct)
             end
         end
-        if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled
+        if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled, log it as unfulfilled & try to reallocate it
             update_demand_df!(x, src, dst, mat, accepted_prod, row)
         end
     end
-    #remove any fulfilled orders from x.orders
-    filter!(:quantity => q -> q > 0, x.orders) 
+    #remove any fulfilled orders from x.open_orders
+    filter!(:quantity => q -> q > 0, x.open_orders) 
 end
 
 """
@@ -297,7 +301,7 @@ function update_demand_df!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, a
     if x.options[:reallocate] && next_sup <= length(sup_priority)
         new_sup = sup_priority[next_sup] #next supplier in line
         new_alloc = (new_sup, req) #store new arc where reallocated
-        order_row.arc = new_alloc #update x.orders to reallocate material
+        order_row.arc = new_alloc #update x.open_orders to reallocate material
     end
     if accepted > 0 #order was partially fulfilled
         x.demand[end,:unfulfilled] = order_row.quantity
