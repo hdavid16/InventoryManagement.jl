@@ -11,6 +11,7 @@ import StatsBase: mean, std
 @reexport using MetaGraphs
 
 include("environment.jl")
+include("network.jl")
 include("metrics.jl")
 include("parameters.jl")
 include("financials.jl")
@@ -20,5 +21,6 @@ include("spaces.jl")
 
 export SupplyChainEnv, reset!, is_terminated, action_space, show_action
 export reorder_policy, simulate_policy!, calculate_service_measures!
+export connect_nodes!
 
 end
