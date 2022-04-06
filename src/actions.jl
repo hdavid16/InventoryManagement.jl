@@ -194,7 +194,7 @@ function fulfill_from_stock!(
             supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
             make_shipment!(x, src, dst, mat, accepted_inv, order_amount, lead, pipeline_grp) #ship material
         end
-        if row.quantity > 0 && row.due <= 0 && !in(src, x.producers) #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate (only if it is not a plant since the plant will try to fulfill from production next)
+        if row.quantity > 0 && row.due <= 0 && !isproduced(x, src, mat) #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate (only if it is not a plant since the plant will try to fulfill from production next)
             update_demand_df!(x, src, dst, mat, accepted_inv, row)
         end
     end
@@ -215,11 +215,10 @@ function fulfill_from_production!(
     lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame, capacities::Dict
 )
     #extract info
+    !isproduced(x, src, mat) && return #exit if mat is not produced at this plant
     bom = get_prop(x.network, src, :bill_of_materials)
-    rmats = findall(k -> k < 0, bom[:,mat]) #indices of raw materials involved with production of mat
-    cmats = findall(k -> k > 0, bom[:,mat]) #indices for co-products
-    rmat_names = names(bom,1)[rmats] #names of raw materials
-    cmat_names = names(bom,1)[cmats] #names of co-products
+    rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
+    cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
 
     #loop through orders
     orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.open_orders, view = true)
@@ -247,6 +246,21 @@ function fulfill_from_production!(
     end
     #remove any fulfilled orders from x.open_orders
     filter!(:quantity => q -> q > 0, x.open_orders) 
+end
+
+"""
+    isproduced(x::SupplyChainEnv, n::Int, mat::Symbol)
+
+Check if material `mat` is produced in node `n`.
+"""
+function isproduced(x::SupplyChainEnv, n::Int, mat::Symbol)
+    !in(:bill_of_materials, keys(props(x.network, n))) && return false #n is not a plant
+    bom = get_prop(x.network, n, :bill_of_materials)
+    !in(mat, names(bom,2)) && return false #mat is not produced at this plant
+    raws = filter(k -> k < 0, bom[:,mat]) #names of raw materials
+    isempty(raws) && return false #mat is not produced at this plant (no raw materials are converted to mat)
+
+    return true
 end
 
 """
