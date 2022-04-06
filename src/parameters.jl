@@ -226,7 +226,7 @@ function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Unio
         truncate_flag = true
     end
     #lead time roundoff will occur if distribution is continuous or deterministic value is not integer
-    roundoff_flag = (key == :lead_time) && (param isa Distribution{T, Continuous} where T || (param isa Vector{Int}))
+    roundoff_flag = (key == :lead_time) && (param isa Distribution{T, Continuous} where T || (param isa Vector && !iszero(mod.(param,1))))
     #update param dict
     param_dict = get_prop(network, obj..., key) 
 
