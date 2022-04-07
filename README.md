@@ -22,9 +22,9 @@
 9. [Creating a Supply Chain Environment](#creating-a-supply-chain-environment)
 10. [Simulation Outputs](#simulation-outputs)
 11. [Examples](#examples)
-    - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
-    - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
-    - [Example #3: chemical production facility](#example-3)
+    - [Example #1: Deterministic 2-echelon system with material transformation and continuous review (s,S) policy](#example-1)
+    - [Example #2: Stochastic 2-echelon distribution system with periodic (r,Q) policy](#example-2)
+    - [Example #3: Stochastic 3-echelon system with material transformation and continuous review (s,S) policy](#example-3)
 12. [Contact](#contact)
 
 ## Overview
@@ -35,7 +35,7 @@
 - `Markets`: Nodes where end-customers place final product orders (e.g., retailer). 
 
 These types of nodes can be used to model the following components of a supply network:
-- `Manufacturing Plants`: Plants are modeled using two nodes joined by a directed arc:
+- `Manufacturing Plants`: Plants are modeled using at least two nodes joined by a directed arc:
   - Raw material storage node: Upstream `producer` node that stores raw materials and the plant's `bill of materials`.
   - Product storage node: Downstream `distributor` node that stores the materials produced at the plant.
   - Arc: the time elapsed between the consumption of raw materials and the production of goods (production time) is modeled with the arc lead time.
@@ -243,20 +243,39 @@ The `SupplyChainEnv` Constructor has the following fields to store the simulatio
 
 ### Example 1
 
+This example has plant with unlimited raw material supply that converts `:B` to `:A` with a 1:1 stoichiometry. The plant sells both materials to a downstream retailer that has market demand for both materials. This system is modeled using 3 nodes:
+- Plant: Node 1 (stores `:B`) => Node 2 (stores `:A`)
+- Retailer: Node 3 buys `:B` from Node 1 and `:A` from Node 2
 
+Demand and lead times are deterministic. A continuous review (s,S) policy is used. 100 periods are simulated.
 
-*See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl).*
+*See code with system and policy parameters [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex1.jl).*
 
 ![](examples/figs/ex1_profit.png)
 ![](examples/figs/ex1_position.png)
 
 ### Example 2
 
+This example has a distributor with unlimited inventory (Node 1) that sells `:A` to a retailer with market demand (Node 2).
 
+Demand and lead time is stochastic. A periodic review (r,Q) policy is used. 100 periods are simulated.
 
-*See code [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
+*See code with system and policy parameters [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex2.jl).*
 
 ![](examples/figs/ex2_inventory.png)
+
+### Example 3
+
+This example has plant that converts `:C` to `:B` to `:A` with a 1:1 stoichiometry for each reaction. The plant acquires raw materials from a supplier upstream with unlimited supply of `:C` and sells `:A` to a retailer downstream. There is direct market demand of `:A` at both the retailer and the plant. Thus, the plant has both internal and external demand. This system is modeled using 5 nodes:
+- Supplier: Node 1 (unlimited supply `:C`)
+- Plant: Node 2 (stores raw `:C`) => Node 3 (stores intermediate `:B`) => Node 4 (stores product `:A` and sells it to both the retailer and the market)
+- Retailer: Node 5 buys `:A` from Node 4 and sells `:A` to the market.
+
+Demand and lead times are stochastic. A continuous review (s,S) policy is used. 100 periods are simulated.
+
+*See code with system and policy parameters [here](https://github.com/hdavid16/InventoryManagement.jl/blob/master/examples/ex3.jl).*
+
+![](examples/figs/ex3_echelon.png)
 
 ## Contact
 

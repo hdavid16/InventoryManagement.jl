@@ -68,5 +68,5 @@ simulate_policy!(env, s, S; policy_type, review_period, policy_variable)
 using DataFrames, StatsPlots
 #inventory level
 df = filter(i -> i.node > 1, env.echelon_stock)
-fig2 = @df df plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
+fig1 = @df df plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
                     xlabel="period", ylabel="echelon stock", ylim=(min(0, minimum(df.level)),maximum(df.level)))
