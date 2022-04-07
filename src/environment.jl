@@ -62,19 +62,18 @@ end
 """
     SupplyChainEnv(
         network::MetaDiGraph, num_periods::Int;
-        discount::Float64=0.0, backlog::Bool=false,
-        reallocate::Bool=false, evaluate_profit::Bool=true,
-        capacitated_inventory::Bool=true, seed::Int=0
+        backlog::Bool=true, reallocate::Bool=false, 
+        guaranteed_service::Bool=false, capacitated_inventory::Bool=true,
+        evaluate_profit::Bool=true, discount::Float64=0., seed::Int=0
     )
 
 Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
 """
 function SupplyChainEnv(
     network::MetaDiGraph, num_periods::Int;
-    discount::Float64=0.0, backlog::Bool=false,
-    reallocate::Bool=false, evaluate_profit::Bool=true,
-    capacitated_inventory::Bool=true, guaranteed_service::Bool=false,
-    seed::Int=0
+    backlog::Bool=true, reallocate::Bool=false, 
+    guaranteed_service::Bool=false, capacitated_inventory::Bool=true,
+    evaluate_profit::Bool=true, discount::Float64=0., seed::Int=0
 )
     #copy network (avoids issues when changing say num_periods after the Env was already created)
     net = copy(network)

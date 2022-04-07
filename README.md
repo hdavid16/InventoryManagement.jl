@@ -12,15 +12,15 @@
 2. [Dependencies](#dependencies)
 3. [Installation](#installation)
 4. [Sequence of Events](#sequence-of-events)
-5. [Model Assumptions](#model-assumptions)
-6. [Model Limitations](#model-limitations)
-7. [Inventory replenishment policies](#inventory-replenishment-policies)
+5. [Inventory replenishment policies](#inventory-replenishment-policies)
+6. [Model Assumptions](#model-assumptions)
+7. [Model Limitations](#model-limitations)
 8. [Model Inputs](#model-inputs)
     - [Node-specific](#node-specific-parameters)
     - [Edge-specific](#edge-specific-parameters)
     - [General (Network)](#general-network-parameters-parameters)
-9. [Creating a SupplyChainEnv](#creating-a-supplychainenv)
-11. [Simulation Output](#simulation-output)
+9. [Creating a Supply Chain Environment](#creating-a-supply-chain-environment)
+10. [Model Outputs](#model-output)
 11. [Examples](#examples)
     - [Example #1: alternate suppliers and continuous review (s,S) policy](#example-1)
     - [Example #2: unlimited upstream supply and periodic (r,Q) policy](#example-2)
@@ -77,19 +77,45 @@ pkg> add https://github.com/hdavid16/InventoryManagement.jl
 The sequence of events in each period of the simulation is patterned after that of the [News Vendor Problem](https://optimization.cbe.cornell.edu/index.php?title=Newsvendor_problem):
 1. Start period.
 2. Place inventory replenishment orders at each node by traversing the supply network downstream (using [topological sorting](https://en.wikipedia.org/wiki/Topological_sorting)).
-  - If `SupplyChainEnv.options[:backlog] = true`, the previous period's backlog is added to the replenishment order. 
+  - If `backlog = true`, the previous period's backlog is added to the replenishment order. 
   - The supplier to the node placing the order will attempt to fill the replenishment order via its on-hand inventory if possible. If the supplier is a `producer` node and its on-hand inventory is insufficient, the supplier will then attempt to fulfill the order via material production (if there is sufficient `production capacity` and `raw material inventory`). 
-  - If `SupplyChainEnv.options[:reallocate] = true`, then any amount that cannot be satisfied is reallocated to the next supplier in the `supplier priority` list (the lowest priority supplier will reallocate back to the highest priority supplier). 
+  - If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next supplier in the `supplier priority` list (the lowest priority supplier will reallocate back to the highest priority supplier). 
   - Accepted replenishment orders are immediately shipped with a lead time sampled from the specified distribution. For `distributor` nodes, the lead time is the in-transit (transportation) time between `distributor` nodes. For `producer` nodes, the lead time is the plant production time. 
   - If the lead time is 0, the stock will be immediately available to the requesting node so that it can be used to fulfill downstream orders as they arrive (possible due to the topological sorting).
 4. Receive inventory that has arrived at each node (after the lead time has transpired).
 5. Market demand for each material occurs after tossing a weighted coin with the probability of demand occurring defined by the inverse of the `demand_period` (average number of periods between positive external demands).
   - For example, if `demand_period = 2`, there is a `1/2 = 50%` chance of having positive demand, or once every 2 days on average.
-8. Demand (including any backlog if `SupplyChainEnv.options[:backlog] = true`) is fulfilled up to available inventory at the `market` nodes.
-9. Unfulfilled demand is backlogged (if `SupplyChainEnv.options[:backlog] = true`).
+8. Demand (including any backlog if `backlog = true`) is fulfilled up to available inventory at the `market` nodes.
+9. Unfulfilled demand is backlogged (if `backlog = true`).
 10. Accounts for each node are generated:
   - Accounts payable: invoice for fulfilled replenishment orders (payable to suppliers), invoice for delivered replenishment orders (payable to third-party shipper), pipeline inventory holding cost for in-transit inventory (cost to requestor), on-hand inventory holding cost, penalties for unfulfilled demand (cost to supplier).
   - Accounts receivable: sales for internal and external demand.
+
+## Inventory replenishment policies
+
+At each iteration in the simulation, an `action` can be provided to the system, which consists of the replenishment orders placed on every link in the supply network. This `action` must be of type `Vector{Real}` and must be `nonnegative` of the form: `[Arc_1_Material_1, Arc_1_Material_2, ..., Arc_1Material_M, Arc_2_Material_1, ..., Arc_2_Material_M, ..., Arc_A_Material_1, ..., Arc_A_Material_M]`, where the ordering in the arcs is given by `edges(SupplyChainEnv.network)` and the ordering in the materials by `SupplyChainEnv.materials`.
+
+An `action` vector can be visualized as a `NamedArray` using `show_action(SupplyChainEnv, action)`:
+
+```julia
+material ╲ arc │ :Arc_1  :Arc_2 ... :Arc_A
+───────────────┼──────────────────────────
+:Material_1    │  
+:Material_2    │  
+...            │
+:Material_M    │  
+```
+
+The function `reorder_policy` can be used to implement an inventory reorder policy at each node based its inventory position or echelon stock. Reorder quantities are placed to the node's priority supplier. The reorder policy is applied for each `material` at each `node` in reverse [topological order](https://en.wikipedia.org/wiki/Topological_sorting). This allows upstream nodes to determine their reorder quantities with information about the reorder quantities placed by their successors (relevant for `producer` nodes to ensure that raw material replenishments are synced with production orders). The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
+
+The `reorder_policy` takes the following inputs and returns an `action` vector.
+- `env::SupplyChainEnv`: inventory management environment
+- `reorder_point::Dict`: the `s` or `r` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
+- `policy_param::Dict`: the `S` or `Q` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
+- `policy_type::Union{Symbol, Dict}`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (`keys`).
+- `review_period::Union{Int, AbstractRange, Vector, Dict}`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (`keys`). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
+- `min_order_qty::Union{Real, Dict}`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0. 
+- `adjust_expected_consumption::Bool`: indicator if the reorder point should be increased (temporarilly) at a `producer` node by the expected raw material consumption for an expected incoming production order.
 
 ## Model Assumptions
 
@@ -109,44 +135,9 @@ The following features are not currently supported:
   - Drop inventory capacities to 0 when the production equipment is occupied. Requires modeling each production unit as its own node.
   - Develop a production model (perhaps based on the Resource-Task Network paradigm)
 
-## Inventory replenishment policies
-
-At each iteration in the simulation, an `action` can be provided to the system, which consists of the replenishment orders placed on every link in the supply network. This `action` must be of type `Vector{Real}` and must be `nonnegative` of the form: `[Arc_1_Material_1, Arc_1_Material_2, ..., Arc_1Material_M, Arc_2_Material_1, ..., Arc_2_Material_M, ..., Arc_A_Material_1, ..., Arc_A_Material_M]`, where the ordering in the arcs is given by `edges(SupplyChainEnv.network)` and the ordering in the materials by `SupplyChainEnv.materials`.
-
-An `action` vector can be visualized as a `NamedArray` using `show_action(SupplyChainEnv, action)`:
-
-```julia
-material ╲ arc │ :Arc_1  :Arc_2 ... :Arc_A
-───────────────┼──────────────────────────
-:Material_1    │  
-:Material_2    │  
-...
-:Material_M    │  
-```
-
-The function `reorder_policy` can be used to implement an inventory reorder policy at each node based its inventory position or echelon stock. Reorder quantities are placed to the node's priority supplier. The reorder policy is applied for each `material` at each `node` in reverse [topological order](https://en.wikipedia.org/wiki/Topological_sorting). This allows upstream nodes to determine their reorder quantities with information about the reorder quantities placed by their successors (relevant for `producer` nodes to ensure that raw material replenishments are synced with production orders). The two most common policies used in industry are the `(s,S)` and `(r,Q)` [policies](https://smartcorp.com/inventory-control/inventory-control-policies-software/).
-
-The `reorder_policy` takes the following inputs and returns an `action` vector.
-- `env::SupplyChainEnv`: inventory management environment
-- `reorder_point::Dict`: the `s` or `r` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
-- `policy_param::Dict`: the `S` or `Q` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
-- `policy_type::Union{Symbol, Dict}`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (`keys`).
-- `review_period::Union{Int, AbstractRange, Vector, Dict}`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (`keys`). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
-- `min_order_qty::Union{Real, Dict}`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0. 
-- `adjust_expected_consumption::Bool`: indicator if the reorder point should be increased (temporarilly) at a `producer` node by the expected raw material consumption for an expected incoming production order.
-
 ## Model Inputs
 
 The supply network topology must be mapped on a network graph using [Graphs.jl](https://github.com/JuliaGraphs/Graphs.jl). The system parameters are stored in the network's metadata using [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl).
-
-### Model Options:
-
-The following options can be specified for a `SupplyChainEnv`:
-- `backlog::Bool`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales
-- `reallocate::Bool`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
-- `evaluate_profit::Bool`: the simulation will calculate the proft at each node if `true` and save the results in `env.profit`.
-- `capacitated_inventory::Bool`: the simulation will enforce inventory capacity constraints by discarding excess inventory at the end of each period if `true`; otherwise, the system will allow the inventory to exceed the specified capacity.
-- `guaranteed_service::Bool`: the simulation will operate under the assumptions in the Guaranteed Service Model ([GSM](https://www.sciencedirect.com/science/article/pii/S1474667016333535)). If `true`, `backlog = true` will be forced. Orders that are open and within the service time window will be backlogged. Once the service time expires, the orders become lost sales. In order to replicate the GSM assumption that extraordinary measures will be used to fulfill any expired orders, a dummy node with infinite supply can be attached to each node and set as the lowest priority supplier to that node.
 
 ### Node-specific Parameters
 
@@ -154,7 +145,7 @@ The following options can be specified for a `SupplyChainEnv`:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
-- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of suppliers (from high to low priority) for each material (`keys`). When a request cannot be fulfilled due to insufficient production capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `SupplyChainEnv.options[:reallocate] == true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of suppliers (from high to low priority) for each material (`keys`). When a request cannot be fulfilled due to insufficient production capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:production_capacity::Dict`: maximum production capacity for each material (`keys`). Default = `Inf`.
 - `:bill_of_materials::Union{Dict,NamedArray}`: `keys` are material `Tuples`, where the first element is the input material and the second element is the product/output material; the `values` indicate the amount of input material consumed to produce 1 unit of output material. Alternatively, a `NamedArray` can be passed where the input materials are the rows and the output materials are the columns. The following convention is used for the bill of material (BOM) values:
   - `zero`: input not involved in production of output.
@@ -165,19 +156,19 @@ The following options can be specified for a `SupplyChainEnv`:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `SupplyChainEnv.options[:reallocate] == true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 
 `Markets` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `SupplyChainEnv.options[:reallocate] == true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D where D <: Number`. Default = `0`.
 - `:demand_period::Dict`: mean number of periods between demand arrivals for each material (`keys`). Default = `1`.
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored. Default = `zeros(SupplyChainEnv.num_periods)`.
 - `:sales_price::Dict`: market sales price for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`). Default = `0`.
-- `:service_time::Dict`: service time allowed to fulfill market demand for each material (`keys`). Default = `0`.
+- `:service_time::Dict`: service time allowed to fulfill market demand for each material (`keys`). This parameter is only relevant if `guaranteed_service = true`. Default = `0`.
 
 ### Edge-specific Parameters
 
@@ -187,20 +178,44 @@ All edges have the following fields in their metadata:
 - `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied internal demand for each material (`keys`). Default = `0`.
 - `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
-- `:service_time::Dict`: service time allowed to fulfill internal demand for each material (`keys`). Default = `0`.
+- `:service_time::Dict`: service time allowed to fulfill internal demand for each material (`keys`). This parameter is only relevant if `guaranteed_service = true`. Default = `0`.
 
 ### General Network Parameters
 
 The graph metadata should have the following fields in its metadata:
 - `:materials::Vector` with a list of all materials in the system.
 
-## Creating a SupplyChainEnv
+## Creating a Supply Chain Environment
 
+The `SupplyChainEnv` function can be used to create a `SupplyChainEnv` Constructor.
+This function takes the following inputs:
+- Positional Arguments:
+  - `Network::MetaDiGraph`: supply chain network with embedded metadata
+  - `num_periods::Int`: number of periods to simulate
+- Keyword Arguments (system options):
+  - `backlog::Bool = true`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales.
+  - `reallocate::Bool = false`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
+  - `guaranteed_service::Bool = false`: the simulation will operate under the assumptions in the Guaranteed Service Model ([GSM](https://www.sciencedirect.com/science/article/pii/S1474667016333535)). If `true`, `backlog = true` will be forced. Orders that are open and within the service time window will be backlogged. Once the service time expires, the orders become lost sales. In order to replicate the GSM assumption that extraordinary measures will be used to fulfill any expired orders, a dummy node with infinite supply can be attached to each node and set as the lowest priority supplier to that node.
+  - `capacitated_inventory::Bool = true`: the simulation will enforce inventory capacity constraints by discarding excess inventory at the end of each period if `true`; otherwise, the system will allow the inventory to exceed the specified capacity.
+  - `evaluate_profit::Bool = true`: the simulation will calculate the proft at each node if `true` and save the results in `SupplyChainEnv.profit`.
+- Aditional Keyword Arguments:
+  - `discount::Float64 = 0.`: discount factor (i.e., interest rate) to account for the time-value of money.
+  - `seed::Int = 0`: random seed for simulation.
 
+## Model Outputs
 
-## Simulation Output
-
-
+The `SupplyChainEnv` Constructor has the following fields to store the simulation results in `DataFrames`:
+- `inventory_on_hand`: on-hand inventory for each `node`, `material`, and `period`. Discarded inventory is marked when `capacitated_inventory = true`
+- `inventory_level`: inventory level for each `node`, `material`, and `period`
+- `inventory_pipeline`: in-transit inventory for each `arc`, `material`, and `period`
+- `inventory_position`: inventory position for each `node`, `material`, and `period`
+- `echelon_stock`: inventory position for each `echelon`, `material`, and `period`
+- `demand`: internal and external demands for each `material` on each `arc` (for internal demand) and each `node` (for external demand), at each `period`. The total demand quantities, fulfilled demand quantities, lead times and unfulfilled demand quantities are tabulated. If `reallocate = true` and the unfulfilled demand is reallocated, the `arc` that the demand is reallocated to is also indicated.
+- `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. The `fulfilled` column has a vector of `Tuples` that indicate the fulfillment time, supplier, and amount fulfilled. More than one `Tuple` will be shown if the order has been split.
+- `open_orders`: open (not yet fulfilled) internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each open order. The `due` column indicates the time left until the order is due (as specified by the `service_time`).
+- `shipments`: current in-transit inventory for each `arc` and `material` with remaining lead time.
+- `profit`: time-discounted profit for each `node` at each `period`.
+- `metrics`: service metrics (service level and fillrate) for each `supplier` and `material`.
 
 ## Examples
 
