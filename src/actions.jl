@@ -1,15 +1,19 @@
 """
-    show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
+    (x::SupplyChainEnv, action::Vector{T} where T <: Real)
 
-Visualize a replenishment order vector as a DataFrame indicating how much of
-which material is being requested on each arc.
+Convert a replenishment order vector into a NamedArray indicating how much of
+each material (rows) is being requested on each arc (columns).
 """
-function show_action(action::Vector{T} where T <: Real, env::SupplyChainEnv)
-    mats = env.materials
-    arcs = [(e.src, e.dst) for e in edges(env.network)]
-    act = reshape(action, (length(mats), length(arcs)))
-    return DataFrame(:material => mats, 
-                     [Symbol(a) => act[:,i] for (i,a) in enumerate(arcs)]...)
+function show_action(x::SupplyChainEnv, action::Vector{T} where T <: Real)
+    mats = x.materials
+    arcs = [(e.src, e.dst) for e in edges(x.network)]
+    action_named_array = NamedArray(
+        reshape(action, (length(mats), length(arcs))),
+        (x.materials, arcs),
+        (:material, :arc)
+    )
+    
+    return action_named_array
 end
 
 """
@@ -22,12 +26,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #validate action input and reshape to matrix
     @assert all(action .>= 0) "Reorder actions cannot be negative."
     @assert length(action) == length(x.materials)*ne(x.network) "Reorder action vector must have length num_products * num_edges."
-    arcs = [(e.src, e.dst) for e in edges(x.network)]
-    act = NamedArray(
-        reshape(action, (length(x.materials), length(arcs))),
-        (x.materials, arcs),
-        (:material, :arc)
-    )
+    act = show_action(x, action)
     #increase period counter
     x.period += 1
     #intialize next period on-hand and pipeline inventories with previous inventories
@@ -37,7 +36,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #decrease time until due date for active orders by one period
     x.open_orders.due .-= 1
     #place requests
-    place_orders!(x, act, arcs)
+    place_orders!(x, act)
     #update on hand and pipeline inventories due to arrived shipments
     arrivals = update_shipments!(x)
     #discard any excess inventory
@@ -78,11 +77,12 @@ function initialize_inventories!(x::SupplyChainEnv)
 end
 
 """
-    place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
+    place_orders!(x::SupplyChainEnv, act::NamedArray)
 
 Place inventory replenishment requests throughout the network.
 """
-function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
+function place_orders!(x::SupplyChainEnv, act::NamedArray)
+    arcs = names(act,2) #arcs
     #exit if no action
     if iszero(act)
         exit_order!(x, arcs)
@@ -95,7 +95,7 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
     #sample lead times
     leads = Dict((a,mat) => rand(get_prop(x.network, a, :lead_time)[mat]) for a in edges(x.network), mat in mats)
     #identify nodes that can place requests
-    nodes = reverse(topological_sort_by_dfs(x.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
+    nodes = topological_sort_by_dfs(x.network) #sort nodes in topological order so that orders are placed moving down the network
     source_nodes = filter(n -> isempty(inneighbors(x.network, n)), nodes) #source nodes (can't place replenishment orders)
     request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
     #get on hand inventory
@@ -120,11 +120,7 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
                 continue 
             end
             #create order and save service time
-            x.num_orders += 1 #create new order
-            push!(x.orders, [x.num_orders, x.period, a, mat, amount, []]) #update order history
-            service_time = get_prop(x.network, sup, :service_time)[mat] #get service time
-            push!(x.open_orders, [x.num_orders, a, mat, amount, service_time]) #add order to temp order df
-            sort!(x.open_orders, [:due, :id]) #sort by service time and creation date (serve orders with lowest service time, ranked by order age)
+            create_order!(x, a..., mat, amount)
             #try to fulfill order from stock
             fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
             #try to fulfill order from production
@@ -169,16 +165,33 @@ function calculate_backlog(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol)
 end
 
 """
+    create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, amount::Real)
+
+Create and log order.
+"""
+function create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, amount::Real)
+    x.num_orders += 1 #create new order ID
+    push!(x.orders, [x.num_orders, x.period, (sup,req), mat, amount, []]) #update order history
+    if sup == req #get service time for market node
+        service_time = get_prop(x.network, sup, :service_time)[mat] 
+    else #get service time for arc
+        service_time = get_prop(x.network, sup, req, :service_time)[mat] 
+    end
+    push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_time]) #add order to temp order df
+    sort!(x.open_orders, [:due, :id]) #sort by service time and creation date (serve orders with lowest service time, ranked by order age)
+end
+
+"""
     fulfill_from_stock!(
         x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, 
-        lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame
+        lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
     )
 
 Fulfill request from on-hand inventory.
 """
 function fulfill_from_stock!(
     x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, 
-    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame
+    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
 )
     #available supply
     supply = supply_grp[(node = src, material = mat)].level[1]
@@ -191,11 +204,12 @@ function fulfill_from_stock!(
         if accepted_inv > 0
             row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
             push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_inv)) #update fulfilled column in order history (date, supplier, amount fulfilled)
+            push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
             supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
-            make_shipment!(x, src, dst, mat, accepted_inv, order_amount, lead, pipeline_grp) #ship material
+            !ismissing(pipeline_grp) && make_shipment!(x, src, dst, mat, accepted_inv, lead, pipeline_grp) #ship material (unless it is external demand)
         end
-        if row.quantity > 0 && row.due <= 0 && !isproduced(x, src, mat) #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate (only if it is not a plant since the plant will try to fulfill from production next)
-            update_demand_df!(x, src, dst, mat, accepted_inv, row)
+        if row.quantity > 0 && row.due <= 0 && !isproduced(x, src, mat) #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate (only if node is not a plant that produces mat since the plant will try to fulfill from production next)
+            log_unfulfilled_demand!(x, src, dst, mat, accepted_inv, row)
         end
     end
     #remove any fulfilled orders from x.open_orders
@@ -229,19 +243,21 @@ function fulfill_from_production!(
         if accepted_prod > 0
             row.quantity -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
             push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_prod)) #update fulfilled column in order history (date, supplier, and amount fulfilled)
+            push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_prod, lead, 0, missing]) #log demand
             capacities[src][mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
             for rmat in rmat_names #reactant consumed
                 supply_grp[(node = src, material = rmat)].level[1] += accepted_prod * bom[rmat,mat]
             end
-            make_shipment!(x, src, dst, mat, accepted_prod, order_amount, lead, pipeline_grp) #schedule shipment
+            make_shipment!(x, src, dst, mat, accepted_prod, lead, pipeline_grp) #schedule shipment
             for cmat in cmat_names #coproducts scheduled for production
                 coproduction = accepted_prod*bom[cmat,mat]
                 capacities[src][cmat] -= coproduction #update coproduct production capacity
-                make_shipment!(x, src, dst, cmat, coproduction, 0, lead, pipeline_grp) #schedule shipment of co-product (original order amount is 0 since this is a coproduct)
+                push!(x.demand, [x.period, (src,dst), cmat, 0, coproduction, lead, 0, missing]) #log demand
+                make_shipment!(x, src, dst, cmat, coproduction, lead, pipeline_grp) #schedule shipment of co-product (original order amount is 0 since this is a coproduct)
             end
         end
         if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled, log it as unfulfilled & try to reallocate it
-            update_demand_df!(x, src, dst, mat, accepted_prod, row)
+            log_unfulfilled_demand!(x, src, dst, mat, accepted_prod, row)
         end
     end
     #remove any fulfilled orders from x.open_orders
@@ -293,27 +309,31 @@ function get_capacity_and_supply(
 end
 
 """
-    make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, original_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
+    make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
 
 Schedule shipment of material.
 """
-function make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, original_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
+function make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
+    #ship material
     push!(x.shipments, [(src,dst), mat, accepted_amount, lead])
-    push!(x.demand, [x.period, (src,dst), mat, original_amount, accepted_amount, lead, 0, missing])
     pipeline_grp[(arc = (src, dst), material = mat)].level[1] += accepted_amount #add inventory to pipeline
+    if iszero(lead) #if zero leadtime, update shipments so that it is immediately available for fulfilling downstream orders
+        update_shipments!(x)
+    end
 end
 
 """
-    update_demand_df!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, accepted::Float64, order_row::DataFrameRow)
+    log_unfulfilled_demand!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, accepted::Float64, order_row::DataFrameRow)
 
-Reallocate order to next supplier in the priority list.
+Calculate unfulfilled demand and reallocate order to next supplier in the priority list.
 """
-function update_demand_df!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, accepted::Float64, order_row::DataFrameRow)
-    sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
-    next_sup = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
+function log_unfulfilled_demand!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, accepted::Float64, order_row::DataFrameRow)
     new_alloc = missing
-    if x.options[:reallocate] && next_sup <= length(sup_priority)
-        new_sup = sup_priority[next_sup] #next supplier in line
+    if x.options[:reallocate] && sup != req #don't reallocate if external demand
+        sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
+        sup_priority = vcat(sup_priority, sup_priority[1]) #add top priority to the end of the list so that lowest priority reallocates to top priority (cycle)
+        next_sup_loc = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
+        new_sup = sup_priority[next_sup_loc] #next supplier in line
         new_alloc = (new_sup, req) #store new arc where reallocated
         order_row.arc = new_alloc #update x.open_orders to reallocate material
     end
@@ -465,10 +485,8 @@ end
 Open markets, apply material demands, and update inventory positions.
 """
 function simulate_markets!(x::SupplyChainEnv)
-    on_hand_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
-    onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
-    last_dmnd = filter([:period,:arc] => (t,a) -> t == x.period-1 && a[1] == a[2], x.demand, view=true)
-    last_d_group = groupby(last_dmnd, [:arc, :material])
+    supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
+    supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
     for n in x.markets
         dmnd_seq_dict = get_prop(x.network, n, :demand_sequence)
         dmnd_freq_dict = get_prop(x.network, n, :demand_period)
@@ -478,14 +496,8 @@ function simulate_markets!(x::SupplyChainEnv)
             dprob = Bernoulli(1/dmnd_freq_dict[mat]) #demand probability (probability of ordering is 1/demand period; aka, once every x days)
             dmnd = dmnd_dist_dict[mat] #demand distribution
             q = iszero(dmnd_seq) ? rand(dprob) * rand(dmnd) : dmnd_seq[x.period] #quantity requested (sampled or specified by user)
-            if x.options[:backlog] && x.period > 1 #add previous backlog to the quantity requested at the market
-                q += last_d_group[(arc = (n,n), material = mat)].unfulfilled[1]
-            end
-            inv = onhand_grp[(node = n, material = mat)].level[1] #on hand inventory
-            sold = min(q, inv) #sales
-            unfilled = max(q - inv, 0.) #unfilfilled
-            push!(x.demand, [x.period, (n,n), mat, q, sold, 0, unfilled, missing]) #update df
-            onhand_grp[(node = n, material = mat)].level[1] -= sold #update end of period inventory (subtract sales)
+            create_order!(x, n, n, mat, q)
+            fulfill_from_stock!(x, n, n, mat, 0., supply_grp, missing)
         end
     end
 end
