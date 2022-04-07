@@ -94,8 +94,10 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
     capacities = Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers)
     #sample lead times
     leads = Dict((a,mat) => rand(get_prop(x.network, a, :lead_time)[mat]) for a in edges(x.network), mat in mats)
-    #non source nodes
-    nonsources = [n for n in vertices(x.network) if !isempty(inneighbors(x.network, n))]
+    #identify nodes that can place requests
+    nodes = reverse(topological_sort_by_dfs(x.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
+    source_nodes = filter(n -> isempty(inneighbors(x.network, n)), nodes) #source nodes (can't place replenishment orders)
+    request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
     #get on hand inventory
     supply_df = filter(:period => k -> k == x.period, x.inventory_on_hand, view=true) #on_hand inventory supply
     supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
@@ -104,36 +106,34 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray, arcs::Vector)
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
 
     #place requests
-    for mat in mats #loop by materials
-        for req in nonsources #loop by nodes placing requests
-            sup_priority = get_prop(x.network, req, :supplier_priority)[mat] #get supplier priority list
-            for sup in sup_priority #loop by supplier priority
-                a = (sup, req) #arc
-                lead = float(leads[Edge(a...), mat]) #sampled lead time
-                amount = act[mat, a] #amount requested
-                #calculate backlog (will be 0 if assuming lost sales)
-                backlog = calculate_backlog(x, sup, req, mat)
-                #continue to next iteration if no request made and no backlog
-                if iszero(amount) && iszero(backlog)
-                    push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
-                    continue 
-                end
-                #create order and save service time
-                x.num_orders += 1 #create new order
-                push!(x.orders, [x.num_orders, x.period, a, mat, amount, []]) #update order history
-                service_time = get_prop(x.network, sup, :service_time)[mat] #get service time
-                push!(x.open_orders, [x.num_orders, a, mat, amount, service_time]) #add order to temp order df
-                sort!(x.open_orders, [:due, :id]) #sort by service time and creation date (serve orders with lowest service time, ranked by order age)
-                #try to fulfill order from stock
-                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
-                #try to fulfill order from production
-                if sup in x.producers
-                    fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
-                end
-                #enforce guaranteed_service operation
-                if x.options[:guaranteed_service] #any open orders with non-positive relative due date (0 service time) become lost sales
-                    filter!(:due => t -> t > 0, x.open_orders)
-                end
+    for req in request_nodes #loop by nodes placing requests (in reverse topological order)
+        sup_priority = get_prop(x.network, req, :supplier_priority) #get supplier priority list
+        for mat in mats, sup in sup_priority[mat] #loop by material and supplier priority
+            a = (sup, req) #arc
+            lead = float(leads[Edge(a...), mat]) #sampled lead time
+            amount = act[mat, a] #amount requested
+            #calculate backlog (will be 0 if assuming lost sales)
+            backlog = calculate_backlog(x, sup, req, mat)
+            #continue to next iteration if no request made and no backlog
+            if iszero(amount) && iszero(backlog)
+                push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
+                continue 
+            end
+            #create order and save service time
+            x.num_orders += 1 #create new order
+            push!(x.orders, [x.num_orders, x.period, a, mat, amount, []]) #update order history
+            service_time = get_prop(x.network, sup, :service_time)[mat] #get service time
+            push!(x.open_orders, [x.num_orders, a, mat, amount, service_time]) #add order to temp order df
+            sort!(x.open_orders, [:due, :id]) #sort by service time and creation date (serve orders with lowest service time, ranked by order age)
+            #try to fulfill order from stock
+            fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
+            #try to fulfill order from production
+            if sup in x.producers
+                fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
+            end
+            #enforce guaranteed_service operation
+            if x.options[:guaranteed_service] #any open orders with non-positive relative due date (0 service time) become lost sales
+                filter!(:due => t -> t > 0, x.open_orders)
             end
         end
     end
@@ -471,7 +471,7 @@ function simulate_markets!(x::SupplyChainEnv)
     last_d_group = groupby(last_dmnd, [:arc, :material])
     for n in x.markets
         dmnd_seq_dict = get_prop(x.network, n, :demand_sequence)
-        dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
+        dmnd_freq_dict = get_prop(x.network, n, :demand_period)
         dmnd_dist_dict = get_prop(x.network, n, :demand_distribution)
         for mat in x.materials
             dmnd_seq = dmnd_seq_dict[mat]

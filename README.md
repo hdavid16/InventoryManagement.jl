@@ -28,25 +28,35 @@
 
 ## Overview
 
-*InventoryManagement.jl* allows modeling a multi-period multi-product supply network. A supply network can be constructed using the following node types:
-- `Producers`: Nodes where inventory transformation takes place (e.g., intermediates or final materials are produced). Reactive systems, including those with co-products, can be modelled using [Bills of Materials](https://en.wikipedia.org/wiki/Bill_of_materials) (see [Model Inputs section](#graph-specific)).
-- `Distributors`: Intermediate nodes where inventory is stored and distributed (e.g., distribution centers).
-- `Markets`: Nodes where end-customers place final product orders (i.e., retailer). These are the last (sink) nodes in the network.
+*InventoryManagement.jl* allows modeling a multi-period multi-product supply network under stochastic stationary demand and stochastic lead times. A supply network can be constructed using the following types of nodes:
+- `Producers`: Nodes where inventory transformation takes place (e.g., raw materials are converted to intermediates or finished goods). Material transformation, including reactive systems with co-products, are modeled using [Bills of Materials](https://en.wikipedia.org/wiki/Bill_of_materials) (see [Model Inputs section](#node-specific)).
+- `Distributors`: Nodes where inventory is stored and distributed (e.g., distribution centers).
+- `Markets`: Nodes where end-customers place final product orders (e.g., retailer). 
 
-The simplest network that can be modeled is one with a single market with one producer or distributor. However, more complex systems can be modelled as well.
+These types of nodes can be used to model the following components of a supply network:
+- `Manufacturing Plants`: Plants are modeled using two nodes joined by a directed arc:
+  - Raw material storage node: Upstream `producer` node that stores raw materials and the plant's `bill of materials`.
+  - Product storage node: Downstream `distributor` node that stores the materials produced at the plant.
+  - Arc: the time elapsed between the consumption of raw materials and the production of goods (production time) is modeled with the arc lead time.
+- `Distribution Centers`: DCs are modeled using `distributor` nodes.
 
-When defining a supply network, a `SupplyChainEnv` object is created based on system inputs and network structure. This object can then be used to execute a simulation of the inventory dynamics. During a simulation, stochastic demand at each of the markets can occur for each of the materials in each period. When product demand occurs at the market, sales are made based on available inventory. Any unfulfilled demand is either backlogged or considered a lost sale depending on the system definition. If no action is taken duirng the simulation, the inventory levels will eventually be depleted. To avoid this from happening, a decision-maker can interact with the system in each period by making inventory replenishment decisions (refered to as `actions`). Lead times for in-transit inventory as well as production lead times are accounted for in the simulation. Transportation lead times can be modelled stochastically to account for lead time uncertainty. From a service time perspective, demand at market nodes has zero service time, whereas non-market nodes have service time equal to the production lead time + transportation lead time.
+Note: Any node can be marked as a `market` node to indicate that there is external demand for one or more materials stored at that node. This allows external demand at distribution centers or at manufacturing plants (either for raw materials or products).
 
-The `SupplyChainEnv` can also potentially be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent`.
+The simplest network that can be modeled is one with a single retailer (`distributor`) with external demand (`market`) that is supplied by a warehouse (`distributor`). However, more complex systems can be modelled as well.
+
+When defining a supply network, a `SupplyChainEnv` object is created based on system inputs and network structure. This object can then be used to simulate the inventory dynamics under a stochastic environment and a specified inventory management policy. Stochasticity is modeled in the external demand quantities at the `market` nodes and in the lead times between connected nodes in the network. However, deterministic values can also be used for external demand or lead times if desired. In each period of the simulation, a decision-maker can specify inventory replenishnment orders throughout the network (refered to as `actions`), which consist of the inventory quantities requested by each node to each immediate supplier for each material in the system. If no action is taken during the simulation, the inventory levels will eventually be depleted by the external demand. Depending on the system configuration, unfulfilled external or internal demand can be either backlogged or considered a lost sale.
+
+The `SupplyChainEnv` can also potentially be used in conjunction with [ReinforcementLearning.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearning.jl) to train a Reinforcement Learning `agent` that places replenishment orders (`actions`) throughout the network.
 
 This package generalizes and extends and the inventory management environment available in [OR-Gym](https://github.com/hubbs5/or-gym).
 
 ## Dependencies
 
-*InventoryManagement.jl* mainly relies on the following packages:
-- [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Define supply network structure and specify node- and edge-specific parameters.
+*InventoryManagement.jl* relies primarily on the following packages:
 - [DataFrames.jl](https://github.com/JuliaData/DataFrames.jl): Tabulate results.
-- [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times in between nodes and the demands at the market nodes.
+- [Distributions.jl](https://github.com/JuliaStats/Distributions.jl): Define probability distributions for the lead times on the network arcs and the demand quantities at the market nodes.
+- [Graphs.jl](https://github.com/JuliaGraphs/Graphs.jl): Define supply network topology
+- [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl): Specify system parameters for each node or arc, or for the system as a whole.
 
 ## Installation
 
@@ -56,21 +66,23 @@ The package can be installed with the Julia package manager. From the Julia REPL
 pkg> add InventoryManagement
 ```
 
+For the master branch, run:
+```julia
+pkg> add https://github.com/hdavid16/InventoryManagement.jl
+```
+
 ## Sequence of Events
 
-The following sequence of events occurs in each period of the simulation:
+The sequence of events in each period of the simulation is patterned after that of the [News Vendor Problem](https://optimization.cbe.cornell.edu/index.php?title=Newsvendor_problem):
 1. Start period.
-2. Place inventory replenishment orders at each node. These are limited to the available production capacity (supplier is a producer) or available inventory. If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next priority supplier.
-   - Distributors ship inventory.
-   - Producers attempt to satisfy the requested amount in the following order: 1) using any on-hand inventory, 2) using any uncommitted scheduled production (only relevant when there is co-production), and 3) manufacturing material. Materials scheduled for production have a production lead time. Production costs are incurred at the start of production.
-   - Producers send orders that have completed (after the production lead time).
+2. Place inventory replenishment orders at each node by traversing the supply network upstream (using reverse [topological sorting](https://en.wikipedia.org/wiki/Topological_sorting)). If `SupplyChainEnv.options[:backlog] = true`, the previous period's backlog is added to the replenishment order. The supplier to the node placing the order will attempt to fill the replenishment order via its on-hand inventory if possible. If the supplier is a `producer` node and its on-hand inventory is insufficient, the supplier will then attempt to fulfill the order via material production (if there is sufficient `production capacity` and `raw material inventory`). If `SupplyChainEnv.options[:reallocate] = true`, then any amount that cannot be satisfied is reallocated to the next supplier in the `supplier priority` list. Accepted replenishment orders are immediately shipped with a lead time sampled from the specified distribution. For `distributor` nodes, the lead time is the in-transit (transportation) time between `distributor` nodes. For `producer` nodes, the lead time is the plant production time.
 4. Receive inventory that has arrived at each node (after the lead time has transpired).
-5. Pay suppliers for inventory received.
-6. Pay shipper for inventory shipped.
-7. Market demand occurs after tossing a weighted coin with the probability of demand occurring defined by the `demand_frequency`.
-8. Demand (including any backlog if `backlog = true`) is fulfilled up to available inventory at the markets.
-9. Unfulfilled demand is penalized and backlogged (if `backlog = true`).
-10. Each node pays a holding cost and a transportation cost for on-hand inventory and in-transit inventory at each period.
+5. Market demand for each material occurs after tossing a weighted coin with the probability of demand occurring defined by the inverse of the `demand_period` (average number of periods between positive external demands, meaning that if `demand_period = 2`, there is a `1/2 = 50%` chance of having positive demand, or once every 2 days on average).
+8. Demand (including any backlog if `SupplyChainEnv.options[:backlog] = true`) is fulfilled up to available inventory at the `market` nodes.
+9. Unfulfilled demand is backlogged (if `SupplyChainEnv.options[:backlog] = true`) and penalized.
+10. Accounts for each node are generated:
+  - Accounts payable: invoice for fulfilled replenishment orders (payable to suppliers), invoice for delivered replenishment orders (payable to third-party shipper), pipeline inventory holding cost for in-transit inventory (cost to requestor), on-hand inventory holding cost, penalties for unfulfilled demand (cost to supplier)
+  - Accounts receivable: sales for internal and external demand
 
 ## Model Assumptions
 
@@ -141,10 +153,10 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`)
 - `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D::Number`.
-- `:demand_frequency::Dict`: mean number of periods between demand arrivals for each material (`keys`)
-- `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_frequency` parameters are ignored.
+- `:demand_period::Dict`: mean number of periods between demand arrivals for each material (`keys`)
+- `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored.
 - `:sales_price::Dict`: market sales price for each material (`keys`)
-- `:demand_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
+- `:stockout_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
 
 ### Edge-specific
 

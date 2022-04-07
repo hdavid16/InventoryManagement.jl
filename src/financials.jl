@@ -8,7 +8,7 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     #filter data
     on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inventory_on_hand, view=true) #on_hand inventory 
     onhand_grp = groupby(on_hand_df, [:node, :material])
-    sales_df = filter([:period, :arc] => (t,a) -> t == x.period && a[1] == a[2], x.demand, view=true) #replenishment orders
+    sales_df = filter([:period, :arc] => (t,a) -> t == x.period, x.demand, view=true) #replenishment orders
     sales_grp = groupby(sales_df, [:arc, :material])
     pipeline_df = filter(:period => j -> j == x.period, x.inventory_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
@@ -24,12 +24,12 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
                 profit += sum(sales_and_penalties(x, n, mat, sales_grp))
             end
             #pay suppliers for received inventory and pay transportation/production cost
-            for pred in inneighbors(x.network, n)
-                profit += accounts_payable(x, pred, n, mat, arrivals, pipeline_grp)
+            for sup in inneighbors(x.network, n)
+                profit += purchases_and_pipeline_costs(x, sup, n, mat, arrivals, pipeline_grp)
             end
-            #receive payment for delivered inventory
-            for succ in outneighbors(x.network, n)
-                profit += accounts_receivable(x, n, succ, mat, arrivals)
+            #receive payment for delivered inventory and pay unfulfilled demand penalties
+            for req in outneighbors(x.network, n)
+                profit += sum(sales_and_penalties(x, n, req, mat, sales_grp, arrivals))
             end
         end
 
@@ -41,7 +41,7 @@ end
 """
     holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::GroupedDataFrame)
 
-Calculate holding costs (negative).
+Calculate inventory holding costs (negative).
 """
 function holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::GroupedDataFrame)
     #holding cost
@@ -58,14 +58,34 @@ function holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::Group
 end
 
 """
+    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, sales_grp::GroupedDataFrame, arrivals::DataFrame)
+
+Calculate sales (positive) and unfulfilled demand penalties (negative) for internal demand.
+"""
+function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, sales_grp::GroupedDataFrame, arrivals::DataFrame)
+    s, p = 0, 0 #sales and penalties
+    sales_price = get_prop(x.network, n, req, :sales_price)[mat]
+    dmnd_penalty = get_prop(x.network, n, req, :stockout_penalty)[mat]
+    if sales_price > 0 || dmnd_penalty > 0
+        delivered = filter([:arc, :material] => (a, m) -> a == (n,req) && m == mat, arrivals, view=true).amount
+        sold = !isempty(delivered) ? delivered[1] : 0
+        unfilled = sales_grp[(arc = (n,req), material = mat)].unfulfilled[1]
+        s += sales_price * sold
+        p -= dmnd_penalty * unfilled
+    end
+
+    return s, p
+end
+
+"""
     sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
 
-Calculate sales (positive) and unfulfilled demand penalties (negative)
+Calculate sales (positive) and unfulfilled demand penalties (negative) for external demand.
 """
 function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
-    sales_price = get_prop(x.network, n, :sales_price)[mat]
-    dmnd_penalty = get_prop(x.network, n, :demand_penalty)[mat]
     s, p = 0, 0 #sales and penalties
+    sales_price = get_prop(x.network, n, :sales_price)[mat]
+    dmnd_penalty = get_prop(x.network, n, :stockout_penalty)[mat]
     if sales_price > 0 || dmnd_penalty > 0
         sold, unfilled = sales_grp[(arc = (n,n), material = mat)][1, [:fulfilled, :unfulfilled]]
         s += sales_price * sold
@@ -76,11 +96,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::
 end
 
 """
-    accounts_payable(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
 
-Calculate payments to suppliers and transportation costs (negative).
+Calculate payments to suppliers and transportation costs (fixed and variable) (negative).
 """
-function accounts_payable(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
     price = get_prop(x.network, sup, n, :sales_price)[mat]
     trans_cost = get_prop(x.network, sup, n, :transportation_cost)[mat]
     pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]
@@ -98,22 +118,4 @@ function accounts_payable(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arri
     end
 
     return ap
-end
-
-"""
-    accounts_receivable(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, arrivals::DataFrame)
-
-Calculate payment for sales to downstream nodes (positive).
-"""
-function accounts_receivable(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, arrivals::DataFrame)
-    price = get_prop(x.network, sup, req, :sales_price)[mat]
-    ar = 0
-    if price > 0 #receive payment for delivered inventory
-        sold = filter([:arc, :material] => (j1, j2) -> j1 == (sup,req) && j2 == mat, arrivals, view=true).amount
-        if !isempty(sold)
-            ar += sold[1] * price
-        end
-    end
-
-    return ar
 end
