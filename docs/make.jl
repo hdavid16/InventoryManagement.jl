@@ -8,7 +8,7 @@ makedocs(
                 "Home" => "index.md",
                 "Sequence of Events" => "events.md",
                 "Inventory Policies" => "policies.md",
-                "Simulation Model" => "model.md",
+                "Supply Chain Model" => "model.md",
                 "Examples" => "examples.md",
                 "API" => "api.md"
                ])

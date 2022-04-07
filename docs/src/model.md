@@ -1,101 +1,121 @@
-# Model
-
 ## Model Assumptions
 
 The following assumptions hold in the current implementation, but can be modified in future releases.
 
-- `Producers` produce material on demand ([make-to-order](https://en.wikipedia.org/wiki/Build_to_order) policy).
-- `Producers` can hold inventory. Downstream replenishment orders are fulfilled first with any on-hand inventory, and then via production only after there is no on-hand inventory left.
-- Replenishment orders can only be satisfied with current on-hand inventory or available production capacity.
-- Commited production orders count towards the inventory position of the downstream node, even if they haven't yet shipped (due to production lead time).
-- Production lead times are fixed and independent of the amount being produced.
-- Backlogging is allowed at all nodes. When `reallocation = true`, the unfulfilled quantity from the lowest priority supplier is added to the highest priority supplier request in the next period. *Note:* Unfulfilled requests are currently penalized at `market` nodes only. However, this can be changed in a new release by passing an unfulfilled penalty parameter in th metadata of each node.
+- Production lead times are independent of the amount being produced.
 - Transportation costs are paid to a third party (not a node in the network).
+- Replenishment orders are placed in [topological order]((https://en.wikipedia.org/wiki/Topological_sorting)). This means that upstream nodes place orders first. This allows the following scenario: if the lead time is 0, the ordered inventory will immediately be available so that the node can use it to fulfill downstream orders.
 
 ## Model Limitations
 
 The following features are not currently supported:
 
-- `Producers` do not operate under a [make-to-stock](https://en.wikipedia.org/wiki/Build_to_stock) policy since any material produced gets shipped downstream. However, this can be accomodated by adding a dumby node downstream of the `producer` that holds inventory produced by the `producer` with zero lead time in between the nodes. Thus, using a proper reorder policy, the `producer` can act as a `make-to-stock` system that pushes inventory to the inventory holding node.
-- `Producers` do not have market demand. However, this can be modelled by adding a `market` node downstream of the `producer` with zero lead time in between the nodes.
-- Alternate bills of materials (see [Model Inputs](#graph-specific)) for the same material are not currently supported. This is particularly relevant for chemical systems. However, the following workarounds can be done:
-  - If the alternate reaction pathway has a byproduct, then the main product can be included as a co-product in the bill of materials of the byproduct. For example: A system with 5 materials (`:A - :E`) can have two ways to produce `:A`, `:B + :C -> :A` and `:D -> :A + :E`. The column for material `:A` can have the bill of material: `[0 -1 -1 0 0]`. The column for material `:E` can have the bill of materials: `[1 0 0 -1 0]`. However, `:A` will only be produced by the second pathway if a request for `:E` is made.
-  - Make a copy of the material to specify an alternate pathway. This will require specifying parameters for the copied material throughout the network.
-- Capacity limitations on shared feedstock inventory among producer nodes (e.g., shared inventory tanks) cannot be enforced directly. This is because the shared inventory is its own node and feeds the inventory holding area in the producer node. Thus the total inventory is the inventory at the inventory node plus the inventory positions at the producers. Capacity limitations must be enforced manually via the reorder actions. Potential fixes: (requires changing the package code)
-  - Make the inventory capacity dynamic (a function of the producer inventory holding sites).
-  - Split production site from feedstock inventory into two nodes. Requires updating model logic and behavior.
-- If a `producer` can produce more than 1 material, it is possible to produce all materials it is capable of producing simultaneously. This does not account for resource constraints (e.g., single reactor can only do reaction 1 or reaction 2, but not both simultaneously). However, these can be enforced manually with the reorder actions. Potential fixes: (requires changing the package code)
+- Alternate bills of materials (see [Model Inputs](#general-network-parameters)) for the same material are not currently supported. This is particularly relevant for chemical systems (e.g., there are two reactions that can be used to make the same product).
+- Capacity limitations on shared feedstock inventory among `producer` nodes (e.g., shared inventory tanks) are not enforced in a straightforward way since `producer` nodes have dedicated raw material storage. Shared feedstock inventory can be modeled by having an upstream storage node with zero lead time to each of the `producer` nodes. Each of the `producer` nodes should use an `(s,S)` replenishment policy with `s = 0, S = 0`. When a production order is of size `x` is going to be placed in a period, the policy will assume the feedstock position at the `producer` node is going to derop to `-x` and will order `x` to bring the position up to `0`. Since the lead time is `0` and orders are placed with topological sorting (see [Sequence of Events]($sequence-of-events)), the inventory will be immediately sent to the `producer` node and be available for when the production order comes in. However, if there is not enough production capacity to process `x`, the excess will be left in the dedicated storage for that `producer` node, making it possible to violate the shared inventory capacity constraint.
+- If a `producer` can produce more than 1 material, it is possible for it to produce all materials it is capable of producing simultaneously (if there are enough raw materials). This occurs because the model does not account for resource constraints (e.g., single reactor can only do reaction 1 or reaction 2, but not both simultaneously). However, these can be enforced manually with the reorder actions. Potential fixes (requires changing the source code):
   - Drop inventory capacities to 0 when the production equipment is occupied. Requires modeling each production unit as its own node.
   - Develop a production model (perhaps based on the Resource-Task Network paradigm)
 
-## Model Inputs
+## Creating a Supply Chain Network
 
-The supply network topology must be mapped on a network graph using [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl). The system parameters are stored in the network's metadata.
+The supply network topology must be mapped on a network graph using [Graphs.jl](https://github.com/JuliaGraphs/Graphs.jl). The system parameters are stored in the network's metadata using [MetaGraphs.jl](https://github.com/JuliaGraphs/MetaGraphs.jl). The network can be generated by using the `MetaDiGraph` function and passing one of the following:
+- Number of nodes in the network, which can the be connected via the `connect_nodes!` function:
+```julia
+net = MetaDiGraph(3)
+connect_nodes!(net,
+  1 => 2,
+  2 => 3
+)
+```
+- An adjacency matrix for the network:
+```julia
+net = MetaDiGraph(
+  [0 1 0;
+   0 0 1;
+   0 0 0]
+)
+```
+- An existing `DiGraph`, such as a serial directed graph (`path_digraph`):
+```julia
+net = MetaDiGraph(path_digraph(3))
+```
 
-### Node-specific
+General network, node-specific, and arc-specific metadata can be added using the `set_prop!` and `set_props!` functions. The following subsections describe the property keys accepted for the supply chain network metadata.
 
-`Producers` will have the following fields in their node metadata:
-- `:initial_inventory::Dict`: initial inventory for each material (`keys`)
-- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
-- `:holding_cost::Dict`: unit holding cost for each material (`keys`)
-- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
-- `:production_capacity::Dict`: maximum production capacity for each material (`keys`).
-
-`Distributors` will have the following fields in their node metadata:
-- `:initial_inventory::Dict`: initial inventory for each material (`keys`)
-- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
-- `:holding_cost::Dict`: unit holding cost for each material (`keys`)
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
-
-`Markets` will have the following fields in their node metadata:
-- `:initial_inventory::Dict`: initial inventory for each material (`keys`)
-- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`)
-- `:holding_cost::Dict`: unit holding cost for each material (`keys`)
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `env.options[:reallocate] == true`).
-- `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D::Number`.
-- `:demand_period::Dict`: mean number of periods between demand arrivals for each material (`keys`)
-- `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored.
-- `:sales_price::Dict`: market sales price for each material (`keys`)
-- `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
-
-### Edge-specific
-
-All edges have the following fields in their metadata:
-- `:sales_price::Dict`: unit sales price for inventory sent on that edge (from supplier to receiver) for each material (`keys`)
-- `:transportation_cost::Dict`: unit transportation cost for shipped inventory for each material (`keys`)
-- `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`)
-- `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. For deterministic lead times, instead of using a probability distribution, use `L::Number`.
-
-### General Network
+### General Network Parameters
 
 The graph metadata should have the following fields in its metadata:
 - `:materials::Vector` with a list of all materials in the system.
-- `:bill_of_materials::Matrix`: bill of materials indicating the production recipies for the materials in the system. The row numbers correspond to the input materials and the column numbers to the output materials. The numbering matches that of the `materials` vector. The magnitude of each element is proportional to the production of one unit of output material. Each element can have one of three types of values:
+
+### Node-specific Parameters
+
+`Producers` will have the following fields in their node metadata:
+- `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
+- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
+- `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of suppliers (from high to low priority) for each material (`keys`). When a request cannot be fulfilled due to insufficient production capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:production_capacity::Dict`: maximum production capacity for each material (`keys`). Default = `Inf`.
+- `:bill_of_materials::Union{Dict,NamedArray}`: `keys` are material `Tuples`, where the first element is the input material and the second element is the product/output material; the `values` indicate the amount of input material consumed to produce 1 unit of output material. Alternatively, a `NamedArray` can be passed where the input materials are the rows and the output materials are the columns. The following convention is used for the bill of material (BOM) values:
   - `zero`: input not involved in production of output.
   - `negative number`: input is consumed in the production of output.
   - `positive number`: input is a co-product of the output.
 
-## Model Output
+`Distributors` will have the following fields in their node metadata:
+- `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
+- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
+- `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 
-A `SupplyChainEnv` has the following fields:
-- `network::MetaDiGraph`: Supply Chain Network (metagraph)
-- `markets::Array`: list of market nodes
-- `producers::Array`: list of producer nodes
-- `materials::Array`: list of all material (material) names (strings)
-- `inventory_on_hand::DataFrame`: timeseries with on hand inventories @ each node.
-- `inventory_level::DataFrame`: timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
-- `inventory_pipeline::DataFrame`: timeseries with pipeline inventories on each arc.
-- `inventory_position::DataFrame`: timeseries with inventory positions @ each node (inventory level + placed replenishments).
-- `replenishments::DataFrame`: timeseries Replenishment orders placed on each edge at the end of each period
-- `shipments::DataFrame`: current shipments and time to arrival for each node
-- `demand::DataFrame`: timeseries with realization of demand, sold units, unfulfilled demand, and backlog at each market
-- `profit::DataFrame`: timeseries with profit at each node
-- `reward::Float64`: reward in the system (used for RL)
-- `period::Int`: period in the simulation
-- `num_periods::Int`: number of periods in the simulation
-- `discount::Float64`: time discount factor (interest rate)
-- `options::Dict`: simulation options:
-  - `backlog::Bool`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales
-  - `reallocate::Bool`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
-  - `evaluate_profit::Bool`: the simulation will calculate the proft at each node if `true` and save the results in `env.profit`.
-- `seed::Int`: random seed
+`Markets` will have the following fields in their node metadata:
+- `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
+- `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
+- `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
+- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D where D <: Number`. Default = `0`.
+- `:demand_period::Dict`: mean number of periods between demand arrivals for each material (`keys`). Default = `1`.
+- `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored. Default = `zeros(SupplyChainEnv.num_periods)`.
+- `:sales_price::Dict`: market sales price for each material (`keys`). Default = `0`.
+- `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`). Default = `0`.
+- `:service_time::Dict`: service time allowed to fulfill market demand for each material (`keys`). This parameter is only relevant if `guaranteed_service = true`. Default = `0`.
+
+### Arc-specific Parameters
+
+All arcs have the following fields in their metadata:
+- `:sales_price::Dict`: unit sales price for inventory sent on that edge (from supplier to receiver) for each material (`keys`). Default = `0`.
+- `:transportation_cost::Dict`: unit transportation cost for shipped inventory for each material (`keys`). Default = `0`.
+- `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`). Default = `0`.
+- `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied internal demand for each material (`keys`). Default = `0`.
+- `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
+- `:service_time::Dict`: service time allowed to fulfill internal demand for each material (`keys`). This parameter is only relevant if `guaranteed_service = true`. Default = `0`.
+
+## Creating a Supply Chain Environment
+
+The `SupplyChainEnv` function can be used to create a `SupplyChainEnv` Constructor.
+This function takes the following inputs:
+- Positional Arguments:
+  - `Network::MetaDiGraph`: supply chain network with embedded metadata
+  - `num_periods::Int`: number of periods to simulate
+- Keyword Arguments (system options):
+  - `backlog::Bool = true`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales.
+  - `reallocate::Bool = false`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
+  - `guaranteed_service::Bool = false`: the simulation will operate under the assumptions in the Guaranteed Service Model ([GSM](https://www.sciencedirect.com/science/article/pii/S1474667016333535)). If `true`, `backlog = true` will be forced. Orders that are open and within the service time window will be backlogged. Once the service time expires, the orders become lost sales. In order to replicate the GSM assumption that extraordinary measures will be used to fulfill any expired orders, a dummy node with infinite supply can be attached to each node and set as the lowest priority supplier to that node.
+  - `capacitated_inventory::Bool = true`: the simulation will enforce inventory capacity constraints by discarding excess inventory at the end of each period if `true`; otherwise, the system will allow the inventory to exceed the specified capacity.
+  - `evaluate_profit::Bool = true`: the simulation will calculate the proft at each node if `true` and save the results in `SupplyChainEnv.profit`.
+- Aditional Keyword Arguments:
+  - `discount::Float64 = 0.`: discount factor (i.e., interest rate) to account for the time-value of money.
+  - `seed::Int = 0`: random seed for simulation.
+
+## Simulation Outputs
+
+The `SupplyChainEnv` Constructor has the following fields to store the simulation results in `DataFrames`:
+- `inventory_on_hand`: on-hand inventory for each `node`, `material`, and `period`. Discarded inventory is marked when `capacitated_inventory = true`
+- `inventory_level`: inventory level for each `node`, `material`, and `period`
+- `inventory_pipeline`: in-transit inventory for each `arc`, `material`, and `period`
+- `inventory_position`: inventory position for each `node`, `material`, and `period`
+- `echelon_stock`: inventory position for each `echelon`, `material`, and `period`
+- `demand`: internal and external demands for each `material` on each `arc` (for internal demand) and each `node` (for external demand), at each `period`. The total demand quantities, fulfilled demand quantities, lead times and unfulfilled demand quantities are tabulated. If `reallocate = true` and the unfulfilled demand is reallocated, the `arc` that the demand is reallocated to is also indicated.
+- `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. The `fulfilled` column has a vector of `Tuples` that indicate the fulfillment time, supplier, and amount fulfilled. More than one `Tuple` will be shown if the order has been split.
+- `open_orders`: open (not yet fulfilled) internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each open order. The `due` column indicates the time left until the order is due (as specified by the `service_time`).
+- `shipments`: current in-transit inventory for each `arc` and `material` with remaining lead time.
+- `profit`: time-discounted profit for each `node` at each `period`.
+- `metrics`: service metrics (service level and fillrate) for each `supplier` and `material`.

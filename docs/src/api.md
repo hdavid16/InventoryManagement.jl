@@ -7,6 +7,7 @@
 
 ```@docs
 InventoryManagement.SupplyChainEnv
+InventoryManagement.connect_nodes!
 InventoryManagement.reset!
 InventoryManagement.is_terminated
 ```
@@ -21,17 +22,13 @@ InventoryManagement.simulate_policy!
 # Reorder Actions
 
 ```@docs
-InventoryManagement.place_requests!
-InventoryManagement.update_production!
-InventoryManagement.update_shipments!
-InventoryManagement.enforce_inventory_limits!
-InventoryManagement.update_position!
-InventoryManagement.simulate_markets!
-InventoryManagement.calculate_profit!
+InventoryManagement.show_action
 ```
 
-# Utilities
+# Spaces
+
 ```@docs
-InventoryManagement.show_action
-InventoryManagement.check_inputs
+InventoryManagement.action_space
+InventoryManagement.state
+InventoryManagement.state_space
 ```
