@@ -65,11 +65,12 @@ Calculate sales (positive) and unfulfilled demand penalties (negative) for inter
 function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, sales_grp::GroupedDataFrame, arrivals::DataFrame)
     s, p = 0, 0 #sales and penalties
     sales_price = get_prop(x.network, n, req, :sales_price)[mat]
-    dmnd_penalty = get_prop(x.network, n, req, :stockout_penalty)[mat]
-    if sales_price > 0 || dmnd_penalty > 0
+    dmnd_penalty = get_prop(x.network, n, req, :unfulfilled_penalty)[mat]
+    key = (arc = (n,req), material = mat)
+    if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp)
         delivered = filter([:arc, :material] => (a, m) -> a == (n,req) && m == mat, arrivals, view=true).amount
         sold = !isempty(delivered) ? delivered[1] : 0
-        unfilled = sales_grp[(arc = (n,req), material = mat)].unfulfilled[1]
+        unfilled = sales_grp[key].unfulfilled[1]
         s += sales_price * sold
         p -= dmnd_penalty * unfilled
     end
@@ -85,9 +86,10 @@ Calculate sales (positive) and unfulfilled demand penalties (negative) for exter
 function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
     s, p = 0, 0 #sales and penalties
     sales_price = get_prop(x.network, n, :sales_price)[mat]
-    dmnd_penalty = get_prop(x.network, n, :stockout_penalty)[mat]
-    if sales_price > 0 || dmnd_penalty > 0
-        sold, unfilled = sales_grp[(arc = (n,n), material = mat)][1, [:fulfilled, :unfulfilled]]
+    dmnd_penalty = get_prop(x.network, n, :unfulfilled_penalty)[mat]
+    key = (arc = (n,n), material = mat)
+    if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp)
+        sold, unfilled = sales_grp[key][1, [:fulfilled, :unfulfilled]]
         s += sales_price * sold
         p -= dmnd_penalty * unfilled
     end
