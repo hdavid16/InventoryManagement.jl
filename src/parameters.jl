@@ -6,7 +6,7 @@ Identify market and producer nodes in the network.
 function identify_nodes(net::MetaDiGraph)
     nodes = vertices(net)
     #get end distributors, producers, and distribution centers
-    market_keys = [:demand_distribution, :demand_period, :sales_price, :stockout_penalty, :demand_sequence] #keys to identify a market
+    market_keys = [:demand_distribution, :demand_period, :sales_price, :unfulfilled_penalty, :demand_sequence] #keys to identify a market
     plant_keys = [:bill_of_materials, :production_capacity] #keys to identify a plant (producer)
     mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(net.vprops[n])))]
     plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(net.vprops[n])))]
@@ -97,10 +97,10 @@ Create a dictionary with the parameter keys for each node/arc in the network
 """
 function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
     #lists of parameter keys
-    all_keys = [:initial_inventory, :inventory_capacity, :holding_cost, :service_time]
-    market_keys = [:demand_distribution, :demand_period, :sales_price, :stockout_penalty, :demand_sequence]
+    all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
+    market_keys = [:demand_distribution, :demand_period, :sales_price, :unfulfilled_penalty, :demand_sequence, :service_time]
     plant_keys = [:bill_of_materials, :production_capacity]
-    arc_keys = [:sales_price, :stockout_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time]
+    arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_time]
     all_market_keys = vcat(all_keys, market_keys)
     all_plant_keys = vcat(all_keys, plant_keys)
     #list of nodes and arcs
@@ -162,8 +162,6 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
     param_dict = get_prop(network, obj..., key)
     if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
         set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
-    elseif key in [:demand_distribution, :lead_time] #zero demand/lead_time for that material
-        set_prop!(network, obj..., key, merge(param_dict, Dict(mat => [0])))
     elseif key == :demand_sequence #zeros demand sequence for that material
         merge!(param_dict, Dict(mat => zeros(num_periods)))
     elseif key == :demand_period #demand at every period
@@ -171,7 +169,7 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
     elseif key == :supplier_priority #random ordering of supplier priority
         merge!(param_dict, Dict(mat => inneighbors(network, obj)))
     else #all others default to 0
-        merge!(param_dict, Dict(mat => 0.))
+        set_prop!(network, obj..., key, merge(param_dict, Dict(mat => 0.)))
     end
     param_dict = get_prop(network, obj..., key)
 
