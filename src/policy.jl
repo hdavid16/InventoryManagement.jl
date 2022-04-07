@@ -1,25 +1,28 @@
 """
     reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::Dict,
                         policy_type::Union{Dict, Symbol} = :rQ, 
-                        review_period::Union{Int, StepRange, Vector, Dict} = 1,
-                        min_order_qty::Union{Real, Dict} = 0)
+                        review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
+                        min_order_qty::Union{Real, Dict} = 0,
+                        adjust_expected_consumption::Bool = true)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
 
 # Arguments
-- `env::SupplyChainEnv`: inventory management environment
-- `reorder_point::Dict`: the `s` or `r` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
-- `policy_param::Dict`: the `S` or `Q` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
-- `policy_type::Union{Symbol, Dict}`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (keys).
-- `review_period::Union{Int, StepRange, Vector, Dict}`: number of periods between each inventory review (Default = `1` for continuous review.). If a `StepRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `StepRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
-- `min_order_qty::Union{Real, Dict}`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
+- `env`: inventory management environment
+- `reorder_point`: the `s` or `r` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
+- `policy_param`: the `S` or `Q` parameter in each node for each material in the system. The `keys` are of the form `(node, material)`.
+- `policy_type`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (keys).
+- `review_period`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
+- `min_order_qty`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
+- `adjust_expected_consumption`: should the system be assumed to be centralized? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this (relevant for producer nodes).
 """
 function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::Dict;
                         policy_variable::Union{Dict,Symbol} = :inventory_position,
                         policy_type::Union{Dict, Symbol} = :rQ, 
-                        review_period::Union{Int, StepRange, Vector, Dict} = 1,
-                        min_order_qty::Union{Real, Dict} = 0)
+                        review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
+                        min_order_qty::Union{Real, Dict} = 0,
+                        adjust_expected_consumption::Bool = true)
 
     #check review period; if not in review period, send null action
     null_action = zeros(length(env.materials)*ne(env.network))
@@ -56,7 +59,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
         #review inventory at the node
         state = get_inventory_state(n, mat, policy_variable, state1_grp, state2_grp)
         #if n is a plant, adjust the inventory state by the order from the downstream node
-        if n in env.producers
+        if adjust_expected_consumption && n in env.producers
             state += get_expected_consumption(env, n, mat, action)
         end
         #check if reorder is triggered & calculate quantity
@@ -71,14 +74,14 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
 end
 
 """
-    isvalid_period(period::Int, review_period::Union{Int, StepRange, Vector, Dict})
+    isvalid_period(period::Int, review_period::Union{Int, AbstractRange, Vector, Dict})
 
 Check if current period is a review period.
 """
-function isvalid_period(period::Int, review_period::Union{Int, StepRange, Vector, Dict})
+function isvalid_period(period::Int, review_period::Union{Int, AbstractRange, Vector, Dict})
     if review_period isa Int && !iszero(mod(period,review_period)) 
         return false
-    elseif review_period isa Union{StepRange,Vector} && !in(period, review_period)
+    elseif review_period isa Union{AbstractRange,Vector} && !in(period, review_period)
         return false
     else
         return true
@@ -87,14 +90,14 @@ end
 
 """
     check_policy_inputs!(
-        reorder_point::Dict, policy_param::Dict, review_period::Union{Int, StepRange, Vector, Dict}, 
+        reorder_point::Dict, policy_param::Dict, review_period::Union{Int, AbstractRange, Vector, Dict}, 
         min_order_qty::Union{Real, Dict}, mats::Vector, request_nodes::Vector, supply_nodes::Vector
     )
 
 Validate inputs to inventory policy.
 """
 function check_policy_inputs!(
-    reorder_point::Dict, policy_param::Dict, review_period::Union{Int, StepRange, Vector, Dict}, 
+    reorder_point::Dict, policy_param::Dict, review_period::Union{Int, AbstractRange, Vector, Dict}, 
     min_order_qty::Union{Real, Dict}, mats::Vector, request_nodes::Vector, supply_nodes::Vector
 )
     #check inputs
