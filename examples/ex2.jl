@@ -35,7 +35,10 @@ simulate_policy!(env, r, Q; policy_type, review_period)
 #make plots
 using StatsPlots
 #unfulfilled market demand
-demand = filter(i -> i.arc[1] == 2, env.demand)
+demand = combine(
+    groupby(filter(i -> i.arc[1] == 2, env.demand), [:period,:arc,:material]),
+    :unfulfilled => sum => :unfulfilled
+)
 fig1 = plot(demand.period, demand.unfulfilled, linetype=:steppost, lab="backlog",
                     xlabel="period", ylabel="level", title="Node 2, Material A")
 #add inventory position

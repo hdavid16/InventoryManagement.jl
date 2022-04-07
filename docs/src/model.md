@@ -56,7 +56,7 @@ The supply network topology must be mapped on a network graph using [MetaGraphs.
 - `:demand_period::Dict`: mean number of periods between demand arrivals for each material (`keys`)
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored.
 - `:sales_price::Dict`: market sales price for each material (`keys`)
-- `:stockout_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
+- `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`)
 
 ### Edge-specific
 

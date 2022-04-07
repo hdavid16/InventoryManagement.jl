@@ -30,7 +30,7 @@ set_props!(net, 3, Dict(
     :demand_distribution => Dict(:A => Normal(3,0.3), :B => Normal(2,0.2)),
     :demand_period => Dict(:A => 2, :B => 3),
     :sales_price => Dict(:A => 3, :B => 2),
-    :stockout_penalty => Dict(:A => 0.01, :B => 0.01),
+    :unfulfilled_penalty => Dict(:A => 0.01, :B => 0.01),
     :supplier_priority => Dict(:A => 2, :B => 1)
 ))
 #specify sales prices, transportation costs, lead time
