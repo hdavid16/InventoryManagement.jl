@@ -4,7 +4,7 @@
 
 [![DOI](https://zenodo.org/badge/357413023.svg)](https://zenodo.org/badge/latestdoi/357413023)
 
-[![Latest](https://img.shields.io/badge/docs-dev-blue.svg)](https://hdavid16.github.io/InventoryManagement.jl/dev/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://hdavid16.github.io/InventoryManagement.jl/dev/)
 
 ![](logo.png)
 
