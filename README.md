@@ -173,6 +173,8 @@ The graph metadata should have the following fields in its metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
+- `:early_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled before their due date for each material (`keys`). Default = `true`.
+- `:partial_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of suppliers (from high to low priority) for each material (`keys`). When a request cannot be fulfilled due to insufficient production capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:production_capacity::Dict`: maximum production capacity for each material (`keys`). Default = `Inf`.
 - `:bill_of_materials::Union{Dict,NamedArray}`: `keys` are material `Tuples`, where the first element is the input material and the second element is the product/output material; the `values` indicate the amount of input material consumed to produce 1 unit of output material. Alternatively, a `NamedArray` can be passed where the input materials are the rows and the output materials are the columns. The following convention is used for the bill of material (BOM) values:
@@ -184,13 +186,17 @@ The graph metadata should have the following fields in its metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:early_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled before their due date for each material (`keys`). Default = `true`.
+- `:partial_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 
 `Markets` will have the following fields in their node metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
-- `:supplier_priority::Dict`: `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
+- `:early_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled before their due date for each material (`keys`). Default = `true`.
+- `:partial_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
+- `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D where D <: Number`. Default = `0`.
 - `:demand_period::Dict`: mean number of periods between demand arrivals for each material (`keys`). Default = `1`.
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored. Default = `zeros(SupplyChainEnv.num_periods)`.
@@ -216,7 +222,7 @@ This function takes the following inputs:
   - `Network::MetaDiGraph`: supply chain network with embedded metadata
   - `num_periods::Int`: number of periods to simulate
 - Keyword Arguments (system options):
-  - `backlog::Bool = true`: backlogging allowed if `true`; otherwise, unfulfilled demand is lost sales.
+  - `backlog::Bool = true`: backlogging allowed if `true`; otherwise, orders that reach their due date and are not fulfilled become lost sales.
   - `reallocate::Bool = false`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
   - `guaranteed_service::Bool = false`: the simulation will operate under the assumptions in the Guaranteed Service Model ([GSM](https://www.sciencedirect.com/science/article/pii/S1474667016333535)). If `true`, `backlog = true` will be forced. Orders that are open and within the service time window will be backlogged. Once the service time expires, the orders become lost sales. In order to replicate the GSM assumption that extraordinary measures will be used to fulfill any expired orders, a dummy node with infinite supply can be attached to each node and set as the lowest priority supplier to that node.
   - `capacitated_inventory::Bool = true`: the simulation will enforce inventory capacity constraints by discarding excess inventory at the end of each period if `true`; otherwise, the system will allow the inventory to exceed the specified capacity.

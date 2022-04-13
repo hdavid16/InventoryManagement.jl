@@ -16,7 +16,7 @@ set_prop!(net, :materials, [:A, :B])
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(
-    :initial_inventory => Dict(:B => 150),
+    :initial_inventory => Dict(:B => 125),
     :holding_cost => Dict(:B => 0.001),
     :bill_of_materials => Dict((:B,:A) => -1)
 ))
@@ -27,7 +27,7 @@ set_props!(net, 2, Dict(
 set_props!(net, 3, Dict(
     :initial_inventory => Dict(:A => 100, :B => 50),
     :holding_cost => Dict(:A => 0.003, :B => 0.002),
-    :demand_distribution => Dict(:A => 3, :B => 2),
+    :demand_distribution => Dict(:A => 2, :B => 1),
     :demand_period => Dict(:A => 2, :B => 3),
     :sales_price => Dict(:A => 3, :B => 2),
     :unfulfilled_penalty => Dict(:A => 0.01, :B => 0.01),
@@ -56,9 +56,10 @@ s = Dict((3,:A) => 50, (3,:B) => 25, (2,:A) => 100) #lower bound on inventory
 S = Dict((3,:A) => 100, (3,:B) => 50, (2,:A) => 125) #base stock level
 
 #create environment and run simulation with reorder policy
+policy_variable = :inventory_position
 num_periods = 100
 env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
-simulate_policy!(env, s, S; policy_type, review_period)
+simulate_policy!(env, s, S; policy_variable, policy_type, review_period)
 
 #make plots
 using DataFrames, StatsPlots

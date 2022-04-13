@@ -64,7 +64,7 @@ function check_inputs!(
                 param = param_dict[mat]
                 if key == :supplier_priority
                     param_dict = check_supplier_priority(network, obj, mat)
-                elseif key in [:demand_distribution, :lead_time]
+                elseif key in [:demand_distribution, :lead_time, :service_time]
                     param_dict, replace_flag, truncate_flag, roundoff_flag = check_stochastic_variable!(network, key, obj, mat)
                 elseif key == :demand_sequence
                     @assert length(param) == num_periods "The demand sequence for material $mat at node $obj must be a vector with $num_periods entries."
@@ -115,10 +115,10 @@ function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Ve
             arc_keys
         for obj in env_obj
     )
-    #add supplier priority to the keys for the nonsources
+    #add keys to all nodes that place requests (non-source nodes = have a predecessor node)
     for node in nodes
         if node in nonsources
-            push!(env_keys[node], :supplier_priority)
+            push!(env_keys[node], :supplier_priority, :partial_fulfillment, :early_fulfillment)
         end
     end
 
@@ -168,6 +168,10 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
         merge!(param_dict, Dict(mat => 1))
     elseif key == :supplier_priority #random ordering of supplier priority
         merge!(param_dict, Dict(mat => inneighbors(network, obj)))
+    elseif key == :partial_fulfillment #allow partial fulfillment by default
+        merge!(param_dict, Dict(mat => true))
+    elseif key == :early_fulfillment #allow early fulfillment by default (before service time expires)
+        merge!(param_dict, Dict(mat => true))
     else #all others default to 0
         set_prop!(network, obj..., key, merge(param_dict, Dict(mat => 0.)))
     end
@@ -224,7 +228,7 @@ function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Unio
         truncate_flag = true
     end
     #lead time roundoff will occur if distribution is continuous or deterministic value is not integer
-    roundoff_flag = (key == :lead_time) && (param isa Distribution{T, Continuous} where T || (param isa Vector && !iszero(mod.(param,1))))
+    roundoff_flag = (key in [:lead_time,:service_time]) && (param isa Distribution{T, Continuous} where T || (param isa Vector && !iszero(mod.(param,1))))
     #update param dict
     param_dict = get_prop(network, obj..., key) 
 

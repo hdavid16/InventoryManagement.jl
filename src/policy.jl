@@ -15,7 +15,7 @@ Apply an inventory policy to specify the replinishment orders for each material
 - `policy_type`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (keys).
 - `review_period`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
 - `min_order_qty`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
-- `adjust_expected_consumption`: should the system be assumed to be centralized? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this (relevant for producer nodes).
+- `adjust_expected_consumption`: should the system be assumed to be centralized? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this.
 """
 function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::Dict;
                         policy_variable::Union{Dict,Symbol} = :inventory_position,
@@ -59,7 +59,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
         #review inventory at the node
         state = get_inventory_state(n, mat, policy_variable, state1_grp, state2_grp)
         #if n is a plant, adjust the inventory state by the order from the downstream node
-        if adjust_expected_consumption && n in env.producers
+        if adjust_expected_consumption
             state += get_expected_consumption(env, n, mat, action)
         end
         #check if reorder is triggered & calculate quantity
@@ -149,14 +149,20 @@ end
 Get expected raw material consumption at the producer node for downstream requests.
 """
 function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Symbol, action::NamedArray)
-    bom = get_prop(env.network, n, :bill_of_materials)
-    mprods = names(filter(i -> i < 0, bom[mat,:]), 1) #find which products are produced from mat
-    successors = outneighbors(env.network, n) #get successor nodes
     consume = 0
-    for succ in successors, mprod in mprods
-        ordered = action[mprod, (n, succ)] #amount ordered by successor
-        stoich = bom[mat, mprod] #stoichiometry
-        consume += ordered * stoich #amount that will be consumed to fulfill the order (negative)
+    successors = outneighbors(env.network, n) #get successor nodes
+    if isconsumed(env, n, mat)
+        bom = get_prop(env.network, n, :bill_of_materials)
+        mprods = names(filter(i -> i < 0, bom[mat,:]), 1) #find which products are produced from mat
+        for succ in successors, mprod in mprods
+            ordered = action[mprod, (n, succ)] #amount ordered by successor
+            stoich = bom[mat, mprod] #stoichiometry
+            consume += ordered * stoich #amount that will be consumed to fulfill the order (negative)
+        end
+    else
+        for succ in successors
+            consume -= action[mat, (n, succ)] #amount ordered by successor
+        end
     end
 
     return consume
