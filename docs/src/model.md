@@ -82,7 +82,7 @@ The graph metadata should have the following fields in its metadata:
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored. Default = `zeros(SupplyChainEnv.num_periods)`.
 - `:sales_price::Dict`: market sales price for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`). Default = `0`.
-- `:service_time::Dict`: service time allowed to fulfill market demand for each material (`keys`). This parameter is only relevant if `guaranteed_service = true`. Default = `0`.
+- `:service_time::Dict`: service time (probability distribution or deterministic value) allowed to fulfill market demand for each material (`keys`). Default = `0`.
 
 ### Arc-specific Parameters
 
@@ -92,7 +92,7 @@ All arcs have the following fields in their metadata:
 - `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied internal demand for each material (`keys`). Default = `0`.
 - `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
-- `:service_time::Dict`: service time allowed to fulfill internal demand for each material (`keys`). This parameter is only relevant if `guaranteed_service = true`. Default = `0`.
+- `:service_time::Dict`: service time (probability distribution or deterministic value) allowed to fulfill internal demand for each material (`keys`). Default = `0`.
 
 ## Creating a Supply Chain Environment
 
