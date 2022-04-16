@@ -64,7 +64,7 @@ function check_inputs!(
                 param = param_dict[mat]
                 if key == :supplier_priority
                     param_dict = check_supplier_priority(network, obj, mat)
-                elseif key in [:demand_distribution, :lead_time, :service_time]
+                elseif key in [:demand_distribution, :lead_time, :service_lead_time]
                     param_dict, replace_flag, truncate_flag, roundoff_flag = check_stochastic_variable!(network, key, obj, mat)
                 elseif key == :demand_sequence
                     @assert length(param) == num_periods "The demand sequence for material $mat at node $obj must be a vector with $num_periods entries."
@@ -98,9 +98,9 @@ Create a dictionary with the parameter keys for each node/arc in the network
 function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
     #lists of parameter keys
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
-    market_keys = [:demand_distribution, :demand_period, :sales_price, :unfulfilled_penalty, :demand_sequence, :service_time]
+    market_keys = [:demand_distribution, :demand_period, :sales_price, :unfulfilled_penalty, :demand_sequence, :service_lead_time]
     plant_keys = [:bill_of_materials, :production_capacity]
-    arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_time]
+    arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_lead_time]
     all_market_keys = vcat(all_keys, market_keys)
     all_plant_keys = vcat(all_keys, plant_keys)
     #list of nodes and arcs
@@ -170,7 +170,7 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
         merge!(param_dict, Dict(mat => inneighbors(network, obj)))
     elseif key == :partial_fulfillment #allow partial fulfillment by default
         merge!(param_dict, Dict(mat => true))
-    elseif key == :early_fulfillment #allow early fulfillment by default (before service time expires)
+    elseif key == :early_fulfillment #allow early fulfillment by default (before service lead time expires)
         merge!(param_dict, Dict(mat => true))
     else #all others default to 0
         set_prop!(network, obj..., key, merge(param_dict, Dict(mat => 0.)))
@@ -228,7 +228,7 @@ function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Unio
         truncate_flag = true
     end
     #lead time roundoff will occur if distribution is continuous or deterministic value is not integer
-    roundoff_flag = (key in [:lead_time,:service_time]) && (param isa Distribution{T, Continuous} where T || (param isa Vector && !iszero(mod.(param,1))))
+    roundoff_flag = (key in [:lead_time,:service_lead_time]) && (param isa Distribution{T, Continuous} where T || (param isa Vector && !iszero(mod.(param,1))))
     #update param dict
     param_dict = get_prop(network, obj..., key) 
 

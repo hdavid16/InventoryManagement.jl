@@ -202,7 +202,7 @@ The graph metadata should have the following fields in its metadata:
 - `:demand_sequence::Dict`: a user specified `Vector` of market demand for each material (`keys`). When a nonzero `Vector` is provided, the `demand_distribution` and `demand_period` parameters are ignored. Default = `zeros(SupplyChainEnv.num_periods)`.
 - `:sales_price::Dict`: market sales price for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`). Default = `0`.
-- `:service_time::Dict`: service time (probability distribution or deterministic value) allowed to fulfill market demand for each material (`keys`). Default = `0`.
+- `:service_lead_time::Dict`: service lead time (probability distribution or deterministic value) allowed to fulfill market demand for each material (`keys`). Default = `0`.
 
 ### Arc-specific Parameters
 
@@ -212,7 +212,7 @@ All arcs have the following fields in their metadata:
 - `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied internal demand for each material (`keys`). Default = `0`.
 - `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
-- `:service_time::Dict`: service time (probability distribution or deterministic value) allowed to fulfill (goods issue) internal demand for each material (`keys`). Default = `0`.
+- `:service_lead_time::Dict`: service lead time (probability distribution or deterministic value) allowed to fulfill (goods issue) internal demand for each material (`keys`). Default = `0`.
 
 ## Creating a Supply Chain Environment
 
@@ -224,7 +224,8 @@ This function takes the following inputs:
 - Keyword Arguments (system options):
   - `backlog::Bool = true`: backlogging allowed if `true`; otherwise, orders that reach their due date and are not fulfilled become lost sales.
   - `reallocate::Bool = false`: the system try to reallocate requests if they cannot be satisfied if `true`; otherwise, no reallocation is attempted.
-  - `guaranteed_service::Bool = false`: the simulation will operate under the assumptions in the Guaranteed Service Model ([GSM](https://www.sciencedirect.com/science/article/pii/S1474667016333535)). If `true`, `backlog = true` will be forced. Orders that are open and within the service time window will be backlogged. Once the service time expires, the orders become lost sales. In order to replicate the GSM assumption that extraordinary measures will be used to fulfill any expired orders, a dummy node with infinite supply can be attached to each node and set as the lowest priority supplier to that node.
+  - `guaranteed_service::Bool = false`: the simulation will operate under the assumptions in the Guaranteed Service Model ([GSM](https://www.sciencedirect.com/science/article/pii/S1474667016333535)). If `true`, `backlog = true` will be forced. Orders that are open and within the service lead time window will be backlogged. Once the service lead time expires, the orders become lost sales. In order to replicate the GSM assumption that extraordinary measures will be used to fulfill any expired orders, a dummy node with infinite supply can be attached to each node and set as the lowest priority supplier to that node.
+  - `adjusted_stock::Bool = true`: the simulation will discount orders that have been placed, but have not been fulfilled from the inventory position (and echelon stock) from the supplier node, and will add them to the on-order inventory of the requested node.
   - `capacitated_inventory::Bool = true`: the simulation will enforce inventory capacity constraints by discarding excess inventory at the end of each period if `true`; otherwise, the system will allow the inventory to exceed the specified capacity.
   - `evaluate_profit::Bool = true`: the simulation will calculate the proft at each node if `true` and save the results in `SupplyChainEnv.profit`.
 - Aditional Keyword Arguments:
@@ -241,7 +242,7 @@ The `SupplyChainEnv` Constructor has the following fields to store the simulatio
 - `echelon_stock`: inventory position for each `echelon`, `material`, and `period`
 - `demand`: internal and external demands for each `material` on each `arc` (for internal demand) and each `node` (for external demand), at each `period`. The total demand quantities, fulfilled demand quantities, lead times and unfulfilled demand quantities are tabulated. If `reallocate = true` and the unfulfilled demand is reallocated, the `arc` that the demand is reallocated to is also indicated.
 - `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. The `fulfilled` column has a vector of `Tuples` that indicate the fulfillment time, supplier, and amount fulfilled. More than one `Tuple` will be shown if the order has been split.
-- `open_orders`: open (not yet fulfilled) internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each open order. The `due` column indicates the time left until the order is due (as specified by the `service_time`).
+- `open_orders`: open (not yet fulfilled) internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each open order. The `due` column indicates the time left until the order is due (as specified by the `service_lead_time`).
 - `shipments`: current in-transit inventory for each `arc` and `material` with remaining lead time.
 - `profit`: time-discounted profit for each `node` at each `period`.
 - `metrics`: service metrics (service level and fillrate) for each `supplier` and `material`.

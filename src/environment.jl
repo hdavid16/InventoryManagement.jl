@@ -30,7 +30,8 @@ abstract type AbstractEnv end
   - `reallocate::Bool`: Indicator if unfulfilled requests should be reallocated to alternate suppliers.
   - `evaluate_profit::Bool`: Indicator if the profit should be evaluated at each node.
   - `capacitated_inventory::Bool`: Indicator if inventory limits should be enforced.
-  - `guaranteed_service::Bool`: Indicator if simulation should force lost sales after service time expires.
+  - `guaranteed_service::Bool`: Indicator if simulation should force lost sales after service lead time expires.
+  - `adjusted_stock::Bool`: Indicator if the inventory position and echelon stocks should account for orders that have been placed, but are not yet due.
 - `seed::Int`: Random seed.
 """
 mutable struct SupplyChainEnv <: AbstractEnv
@@ -63,7 +64,8 @@ end
     SupplyChainEnv(
         network::MetaDiGraph, num_periods::Int;
         backlog::Bool=true, reallocate::Bool=false, 
-        guaranteed_service::Bool=false, capacitated_inventory::Bool=true,
+        guaranteed_service::Bool=false, adjusted_stock::Bool=true,
+        capacitated_inventory::Bool=true,
         evaluate_profit::Bool=true, discount::Float64=0., seed::Int=0
     )
 
@@ -72,7 +74,8 @@ Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
 function SupplyChainEnv(
     network::MetaDiGraph, num_periods::Int;
     backlog::Bool=true, reallocate::Bool=false, 
-    guaranteed_service::Bool=false, capacitated_inventory::Bool=true,
+    guaranteed_service::Bool=false, adjusted_stock::Bool=true,
+    capacitated_inventory::Bool=true,
     evaluate_profit::Bool=true, discount::Float64=0., seed::Int=0
 )
     #copy network (avoids issues when changing say num_periods after the Env was already created)
@@ -98,7 +101,8 @@ function SupplyChainEnv(
         :reallocate => reallocate, 
         :evaluate_profit => evaluate_profit,
         :capacitated_inventory => capacitated_inventory,
-        :guaranteed_service => guaranteed_service
+        :guaranteed_service => guaranteed_service,
+        :adjusted_stock => adjusted_stock
     )
     #create environment
     env = SupplyChainEnv(
