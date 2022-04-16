@@ -154,11 +154,11 @@ function check_bill_of_materials!(network::MetaDiGraph, n::Int)
 end
 
 """
-    set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Symbol, num_periods::Int)
+    set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, num_periods::Int)
 
 Set parameter defaults.
 """
-function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Symbol, num_periods::Int)
+function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, num_periods::Int)
     param_dict = get_prop(network, obj..., key)
     if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
         set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
@@ -181,11 +181,11 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
 end
 
 """
-    check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Symbol)
+    check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Union{Symbol,String})
 
 Validate supplier priority input.
 """
-function check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Symbol)
+function check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Union{Symbol,String})
     param_dict = get_prop(network, obj, :supplier_priority)
     param = param_dict[mat]
     #if singleton is provided, put it in a Vector
@@ -200,11 +200,11 @@ function check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Symbol)
 end
 
 """
-    check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Symbol)
+    check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
 
 Validate inputs for stochastic variables (lead time, demand quantity).
 """
-function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Symbol)
+function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
     param_dict = get_prop(network, obj..., key)
     param = param_dict[mat]
     #if singleton is provided, put it in a Vector

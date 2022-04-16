@@ -122,14 +122,14 @@ end
 
 """
     get_inventory_state(
-        n::Int, mat::Symbol, policy_variable::Union{Dict,Symbol},
+        n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol},
         state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
     )
 
 Check the inventory state at node `n` for material `mat`.
 """
 function get_inventory_state(
-    n::Int, mat::Symbol, policy_variable::Union{Dict,Symbol},
+    n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol},
     state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
 )
     pol_var = policy_variable isa Dict ? policy_variable[n] : policy_variable
@@ -144,11 +144,11 @@ function get_inventory_state(
 end
 
 """
-    get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Symbol, action::NamedArray)
+    get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
 
 Get expected raw material consumption at the producer node for downstream requests.
 """
-function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Symbol, action::NamedArray)
+function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
     consume = 0
     successors = outneighbors(env.network, n) #get successor nodes
     if isconsumed(env, n, mat)
@@ -170,14 +170,14 @@ end
 
 """
     calculate_reorder(
-        n::Int, mat::Symbol, state::Float64, MOQ::Real, 
+        n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, 
         policy_type::Union{Dict, Symbol}, policy_param::Dict
     )
 
 Calculate reorder quantity for material `mat` at node `n`.
 """
 function calculate_reorder(
-    n::Int, mat::Symbol, state::Float64, MOQ::Real, 
+    n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, 
     policy_type::Union{Dict, Symbol}, policy_param::Dict
 )
     pol_type = policy_type isa Dict ? policy_type[n] : policy_type #policy type

@@ -163,13 +163,13 @@ function exit_order!(x::SupplyChainEnv, arcs::Vector)
 end
 
 """
-    calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Symbol, due_by::Real = Inf)
+    calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Union{Symbol,String}, due_by::Real = Inf)
 
 If `sup` isa `Int`, calculate quantity of material `mat` backlogged at `sup` node, 
     destined to nodes in `req` with relative due date of `due_by`.
 If `req` isa `Int`, calculate pending orders to `req` placed to the nodes in `sup`.
 """
-function calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Symbol, due_by::Real = Inf)
+function calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Union{Symbol,String}, due_by::Real = Inf)
     #get backlog from open orders
     due_orders = filter([:arc, :material, :due] => (a,m,d) -> a[1] in sup && a[2] in req && m == mat && d <= due_by, x.open_orders, view=true)
     backlog = reduce(+, due_orders.quantity; init = 0)
@@ -187,11 +187,11 @@ function calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union
 end
 
 """
-    create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, amount::Real, service_lead_time::Float64)
+    create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
 
 Create and log order.
 """
-function create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Symbol, amount::Real, service_lead_time::Float64)
+function create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, (sup,req), mat, amount, []]) #update order history
     push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_lead_time]) #add order to temp order df
@@ -207,14 +207,14 @@ end
 
 """
     fulfill_from_stock!(
-        x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, 
+        x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
         lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
     )
 
 Fulfill request from on-hand inventory.
 """
 function fulfill_from_stock!(
-    x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, 
+    x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
     lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
 )
     #available supply
@@ -250,14 +250,14 @@ end
 
 """
     fulfill_from_production!(
-        x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, 
+        x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
         lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame, capacities::Dict
     )
 
 Fulfill request by scheduling material production.
 """
 function fulfill_from_production!(
-    x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, 
+    x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
     lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame, capacities::Dict
 )
     #extract info
@@ -316,11 +316,11 @@ function fulfill_from_production!(
 end
 
 """
-    isproduced(x::SupplyChainEnv, n::Int, mat::Symbol)
+    isproduced(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
 
 Check if material `mat` is produced in node `n`.
 """
-function isproduced(x::SupplyChainEnv, n::Int, mat::Symbol)
+function isproduced(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
     !in(n, x.producers) && return false #n is not a plant
     bom = get_prop(x.network, n, :bill_of_materials)
     !in(mat, names(bom,2)) && return false #mat is not produced at this plant
@@ -331,11 +331,11 @@ function isproduced(x::SupplyChainEnv, n::Int, mat::Symbol)
 end
 
 """
-    isconsumed(x::SupplyChainEnv, n::Int, mat::Symbol)
+    isconsumed(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
 
 Check if material `mat` isa consumed in node `n`.
 """
-function isconsumed(x::SupplyChainEnv, n::Int, mat::Symbol)
+function isconsumed(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
     !in(n, x.producers) && return false #n is not a plant
     bom = get_prop(x.network, n, :bill_of_materials)
     !in(mat, names(bom,1)) && return false #mat is not consumed at this plant
@@ -354,7 +354,7 @@ end
 Get available capacity and material supply at producer.
 """
 function get_capacity_and_supply(
-    n::Int, mat::Symbol, bom::NamedArray, 
+    n::Int, mat::Union{Symbol,String}, bom::NamedArray, 
     rmat_names::Vector, cmat_names::Vector, 
     capacities::Dict, supply_grp::GroupedDataFrame
 )
@@ -375,11 +375,11 @@ function get_capacity_and_supply(
 end
 
 """
-    make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
+    make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, accepted_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
 
 Schedule shipment of material.
 """
-function make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Symbol, accepted_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
+function make_shipment!(x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, accepted_amount::Float64, lead::Float64, pipeline_grp::GroupedDataFrame)
     #ship material
     push!(x.shipments, [(src,dst), mat, accepted_amount, lead])
     pipeline_grp[(arc = (src, dst), material = mat)].level[1] += accepted_amount #add inventory to pipeline
@@ -507,7 +507,7 @@ end
 
 """
     inventory_components(
-        x::SupplyChainEnv, n::Int, mat::Symbol, 
+        x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
         pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
         orders_grp::GroupedDataFrame
     )
@@ -515,7 +515,7 @@ end
 Extract components to determine inventory level and position.
 """
 function inventory_components(
-    x::SupplyChainEnv, n::Int, mat::Symbol, 
+    x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
     pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
     orders_grp::GroupedDataFrame
 )
@@ -540,11 +540,11 @@ function inventory_components(
 end
 
 """
-    update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ech_grp::GroupedDataFrame)
+    update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, ipos::Float64, ech_grp::GroupedDataFrame)
 
 Update echelon stocks for current time period.
 """
-function update_echelons!(x::SupplyChainEnv, n::Int, mat::Symbol, ipos::Float64, ech_grp::GroupedDataFrame)
+function update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, ipos::Float64, ech_grp::GroupedDataFrame)
     for ech in findall(i -> n in i, x.echelons) #identify which echelons have been affected and add to these
         if get_prop(x.network, ech, :inventory_capacity)[mat] > 0 #only add to echelon if that node holds that material
             ech_grp[(node = ech, material = mat)].level[1] += ipos

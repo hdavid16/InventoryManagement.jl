@@ -39,11 +39,11 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
 end
 
 """
-    holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::GroupedDataFrame)
+    holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, onhand_grp::GroupedDataFrame)
 
 Calculate inventory holding costs (negative).
 """
-function holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::GroupedDataFrame)
+function holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, onhand_grp::GroupedDataFrame)
     #holding cost
     hold_cost = get_prop(x.network, n, :holding_cost)[mat]
     c = 0
@@ -58,11 +58,11 @@ function holding_costs(x::SupplyChainEnv, n::Int, mat::Symbol, onhand_grp::Group
 end
 
 """
-    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, sales_grp::GroupedDataFrame, arrivals::DataFrame)
+    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame, arrivals::DataFrame)
 
 Calculate sales (positive) and unfulfilled demand penalties (negative) for internal demand.
 """
-function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, sales_grp::GroupedDataFrame, arrivals::DataFrame)
+function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame, arrivals::DataFrame)
     s, p = 0, 0 #sales and penalties
     sales_price = get_prop(x.network, n, req, :sales_price)[mat]
     dmnd_penalty = get_prop(x.network, n, req, :unfulfilled_penalty)[mat]
@@ -79,11 +79,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Symbol, s
 end
 
 """
-    sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
+    sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame)
 
 Calculate sales (positive) and unfulfilled demand penalties (negative) for external demand.
 """
-function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::GroupedDataFrame)
+function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame)
     s, p = 0, 0 #sales and penalties
     sales_price = get_prop(x.network, n, :sales_price)[mat]
     dmnd_penalty = get_prop(x.network, n, :unfulfilled_penalty)[mat]
@@ -98,11 +98,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Symbol, sales_grp::
 end
 
 """
-    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
 
 Calculate payments to suppliers and transportation costs (fixed and variable) (negative).
 """
-function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Symbol, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
     price = get_prop(x.network, sup, n, :sales_price)[mat]
     trans_cost = get_prop(x.network, sup, n, :transportation_cost)[mat]
     pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]
