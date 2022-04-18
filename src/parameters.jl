@@ -6,7 +6,7 @@ Identify market and producer nodes in the network.
 function identify_nodes(net::MetaDiGraph)
     nodes = vertices(net)
     #get end distributors, producers, and distribution centers
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :demand_sequence] #keys to identify a market
+    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty] #keys to identify a market
     plant_keys = [:bill_of_materials, :production_capacity] #keys to identify a plant (producer)
     mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(net.vprops[n])))]
     plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(net.vprops[n])))]
@@ -66,8 +66,6 @@ function check_inputs!(
                     param_dict = check_supplier_priority(network, obj, mat)
                 elseif key in [:demand_distribution, :lead_time, :service_lead_time]
                     param_dict, replace_flag, truncate_flag, roundoff_flag = check_stochastic_variable!(network, key, obj, mat)
-                elseif key == :demand_sequence
-                    @assert length(param) == num_periods "The demand sequence for material $mat at node $obj must be a vector with $num_periods entries."
                 else
                     @assert param isa Real && param >= 0 "Parameter $key for material $mat at $obj must be a non-negative `Real`."
                 end
@@ -75,19 +73,7 @@ function check_inputs!(
         end
     end
 
-    truncate_flag && @warn """
-    One or more probabilistic distributions allows negative values. 
-    The distribution(s) will be truncated to allow only positive values. 
-    Note, this will shift the mean of the truncated distribution(s).
-    """
-    roundoff_flag && @warn """
-    One or more lead time distributions are not discrete. 
-    Round-off error will occur because the simulation uses discrete time.
-    """
-    replace_flag && @warn """
-    One or more probabilistic distributions passed has zero variance. 
-    It has been replaced with its mean value.
-    """
+    print_warnings(truncate_flag, roundoff_flag, replace_flag)
 end
 
 """
@@ -98,7 +84,7 @@ Create a dictionary with the parameter keys for each node/arc in the network
 function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
     #lists of parameter keys
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :demand_sequence, :service_lead_time]
+    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :service_lead_time]
     plant_keys = [:bill_of_materials, :production_capacity]
     arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_lead_time]
     all_market_keys = vcat(all_keys, market_keys)
@@ -123,6 +109,27 @@ function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Ve
     end
 
     return env_keys
+end
+
+"""
+    print_warnings(truncate_flag::Bool, roundoff_flag::Bool, replace_flag::Bool)
+
+Print warning statements for modified stochastic parameters.
+"""
+function print_warnings(truncate_flag::Bool, roundoff_flag::Bool, replace_flag::Bool)
+    truncate_flag && @warn """
+    One or more probabilistic distributions allows negative values. 
+    The distribution(s) will be truncated to allow only positive values. 
+    Note, this will shift the mean of the truncated distribution(s).
+    """
+    roundoff_flag && @warn """
+    One or more lead time distributions are not discrete. 
+    Round-off error will occur because the simulation uses discrete time.
+    """
+    replace_flag && @warn """
+    One or more probabilistic distributions passed has zero variance. 
+    It has been replaced with its mean value.
+    """
 end
 
 """
@@ -162,8 +169,6 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
     param_dict = get_prop(network, obj..., key)
     if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
         set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
-    elseif key == :demand_sequence #zeros demand sequence for that material
-        merge!(param_dict, Dict(mat => zeros(num_periods)))
     elseif key == :demand_frequency #demand at every period
         merge!(param_dict, Dict(mat => 1))
     elseif key == :supplier_priority #random ordering of supplier priority
@@ -215,8 +220,7 @@ function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Unio
     param = param_dict[mat]
     #checks
     @assert param isa Sampleable || (param isa Vector && length(param) == 1 && param[1] >= 0) """
-        Parameter $key for material $mat at $obj must be a Sampleable distribution 
-        or a sigleton (non-negative) Vector.
+    Parameter $key for material $mat at $obj must be a Sampleable distribution or a sigleton (non-negative) Vector.
     """
     #convert to deterministic if distribution has no variance, or truncate if distribution is negative-valued
     replace_flag, truncate_flag, roundoff_flag = false, false, false
@@ -233,4 +237,21 @@ function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Unio
     param_dict = get_prop(network, obj..., key) 
 
     return param_dict, replace_flag, truncate_flag, roundoff_flag
+end
+
+"""
+    update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, value::Any)
+
+Allows updating the value of one of the stochastic parameters (key options: `:demand_distribution`, `:lead_time`, `:service_lead_time`)
+along `obj` (arc or node) for material `mat`.
+"""
+function update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, value::Any)
+    network = env.network #get network
+    truncate_flag, roundoff_flag, replace_flag = false, false, false #initialize flags
+    param_dict = get_prop(network, obj..., key) #get parameter dictionary
+    set_prop!(network, obj..., key, merge(param_dict, Dict(mat => value))) #update the value
+    param_dict, replace_flag, truncate_flag, roundoff_flag = check_stochastic_variable!(network, key, obj, mat) #validate value
+    print_warnings(truncate_flag, roundoff_flag, replace_flag) #print any warnings
+
+    return param_dict
 end
