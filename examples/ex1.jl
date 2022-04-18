@@ -28,7 +28,7 @@ set_props!(net, 3, Dict(
     :initial_inventory => Dict(:A => 100, :B => 50),
     :holding_cost => Dict(:A => 0.003, :B => 0.002),
     :demand_distribution => Dict(:A => 2, :B => 1),
-    :demand_period => Dict(:A => 2, :B => 3),
+    :demand_frequency => Dict(:A => 1/2, :B => 1/3),
     :sales_price => Dict(:A => 3, :B => 2),
     :unfulfilled_penalty => Dict(:A => 0.01, :B => 0.01),
     :supplier_priority => Dict(:A => 2, :B => 1)

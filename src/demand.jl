@@ -137,13 +137,13 @@ Open markets, apply material demands, and update inventory positions.
 function simulate_markets!(x::SupplyChainEnv)
     for n in x.markets
         dmnd_seq_dict = get_prop(x.network, n, :demand_sequence)
-        dmnd_period_dict = get_prop(x.network, n, :demand_period)
+        dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
         dmnd_dist_dict = get_prop(x.network, n, :demand_distribution)
         serv_dist_dict = get_prop(x.network, n, :service_lead_time)
         for mat in x.materials
             @assert !(n in x.producers && isproduced(x,n,mat)) "Node $n is marked as a market node and producer node, but $mat is produced at this node. The market should be associated with the product storage node of the plant (downstream node), not the raw material storage node."
             dmnd_seq = dmnd_seq_dict[mat] #demand sequence
-            p = 1/dmnd_period_dict[mat] #probability of demand occuring
+            p = dmnd_freq_dict[mat] #probability of demand occuring
             dmnd = dmnd_dist_dict[mat] #demand distribution
             serv_lt = serv_dist_dict[mat] #service lead time
             if !iszero(dmnd_seq)
@@ -152,12 +152,12 @@ function simulate_markets!(x::SupplyChainEnv)
                     rand(serv_lt) #sample service lead time
                 )
             else
-                if p <= 1 #at most 1 order is placed
+                if p <= 1 #at most 1 order is placed per period
                     external_order!(x,n,mat,
                         rand(Bernoulli(p))*rand(dmnd), #sample demand and demand probability
                         rand(serv_lt) #sample service lead time
                     )
-                else #1 or more orders are placed
+                else #1 or more orders are placed per period
                     for _ in 1:floor(p) + rand(Bernoulli(mod(p,1))) #p is the number of orders. If fractional, the fraction is the likelihood of roudning up.
                         external_order!(x,n,mat,
                             rand(dmnd), #sample demand and demand probability

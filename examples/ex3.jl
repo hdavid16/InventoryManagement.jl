@@ -37,13 +37,13 @@ set_props!(net, 4, Dict(
     :initial_inventory => Dict(:A => 105), #initial inventory at storage
     :inventory_capacity => Dict(:A => Inf, :B => 0, :C => 0),
     :demand_distribution => Dict(:A => Normal(5,1)), #demand
-    :demand_period => Dict(:A => 1) #order every other day on average
+    :demand_frequency => Dict(:A => 1) #order every other day on average
 )) 
 set_props!(net, 5, Dict(
     :initial_inventory => Dict(:A => 60), #initial inventory at retail
     :inventory_capacity => Dict(:A => Inf, :B => 0, :C => 0),
     :demand_distribution => Dict(:A => Normal(10,1)), #demand
-    :demand_period => Dict(:A => 1) #order daily
+    :demand_frequency => Dict(:A => 1) #order daily
 ))
 
 ##specify lead times
