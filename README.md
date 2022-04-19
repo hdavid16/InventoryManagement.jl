@@ -210,7 +210,7 @@ All arcs have the following fields in their metadata:
 - `:transportation_cost::Dict`: unit transportation cost for shipped inventory for each material (`keys`). Default = `0`.
 - `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied internal demand for each material (`keys`). Default = `0`.
-- `:lead_time::Distribution{Univariate, Discrete}`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
+- `:lead_time::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
 - `:service_lead_time::Dict`: service lead time (probability distribution or deterministic value) allowed to fulfill (goods issue) internal demand for each material (`keys`). Default = `0`.
 
 ## Creating a Supply Chain Environment
