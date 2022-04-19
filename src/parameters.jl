@@ -8,8 +8,8 @@ function identify_nodes(net::MetaDiGraph)
     #get end distributors, producers, and distribution centers
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty] #keys to identify a market
     plant_keys = [:bill_of_materials, :production_capacity] #keys to identify a plant (producer)
-    mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(net.vprops[n])))]
-    plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(net.vprops[n])))]
+    mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(props(net,n))))]
+    plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(props(net,n))))]
 
     return mrkts, plants
 end
