@@ -84,7 +84,7 @@ If `req` isa `Int`, calculate pending orders to `req` placed to the nodes in `su
 function calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Union{Symbol,String}, due_by::Real = Inf)
     #get backlog from open orders
     due_orders = filter([:arc, :material, :due] => (a,m,d) -> a[1] in sup && a[2] in req && m == mat && d <= due_by, x.open_orders, view=true)
-    backlog = reduce(+, due_orders.quantity; init = 0)
+    backlog = sum(due_orders.quantity; init = 0)
     
     return backlog
 end
