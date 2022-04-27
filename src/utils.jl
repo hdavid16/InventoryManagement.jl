@@ -4,7 +4,7 @@
 Check if material `mat` is produced in node `n`.
 """
 function isproduced(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
-    !in(:bill_of_materials, props(net,n)) && return false #n is not a plant
+    !in(:bill_of_materials, keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
     !in(mat, names(bom,2)) && return false #mat is not produced at this plant
     raws = filter(k -> k < 0, bom[:,mat]) #names of raw materials
@@ -20,7 +20,7 @@ isproduced(env::SupplyChainEnv, n, mat) = isproduced(env.network,n,mat)
 Check if material `mat` isa consumed in node `n`.
 """
 function isconsumed(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
-    !in(:bill_of_materials, props(net,n)) && return false #n is not a plant
+    !in(:bill_of_materials, keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
     !in(mat, names(bom,1)) && return false #mat is not consumed at this plant
     prods = filter(k -> k < 0, bom[mat,:]) #names of products made from mat
