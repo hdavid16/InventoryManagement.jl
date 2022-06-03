@@ -228,7 +228,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         material = Any[],
         quantity = Float64[], 
         fulfilled = Float64[],
-        lead = Float64[], #Any[] #missing when production demand; positive real otherwise
+        lead = Float64[],
         unfulfilled = Float64[],
         reallocated = Any[]
     )

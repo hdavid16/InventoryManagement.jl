@@ -127,10 +127,10 @@ The following assumptions hold in the current implementation, but can be modifie
 
 The following features are not currently supported:
 
-- Alternate bills of materials (see [Model Inputs](#general-network-parameters)) for the same material are not currently supported. This is particularly relevant for chemical systems (e.g., there are two reactions that can be used to make the same product).
+- Alternate bills of materials (see [Model Inputs](#general-network-parameters)) for the same material at the same node are not currently supported. This is particularly relevant for chemical systems (e.g., there are two reactions that can be used to make the same product).
 - Capacity limitations on shared feedstock inventory among `producer` nodes (e.g., shared inventory tanks) are not enforced in a straightforward way since `producer` nodes have dedicated raw material storage. Shared feedstock inventory can be modeled by having an upstream storage node with zero lead time to each of the `producer` nodes. Each of the `producer` nodes should use an `(s,S)` replenishment policy with `s = 0, S = 0`. When a production order is of size `x` is going to be placed in a period, the policy will assume the feedstock position at the `producer` node is going to derop to `-x` and will order `x` to bring the position up to `0`. Since the lead time is `0` and orders are placed with topological sorting (see [Sequence of Events]($sequence-of-events)), the inventory will be immediately sent to the `producer` node and be available for when the production order comes in. However, if there is not enough production capacity to process `x`, the excess will be left in the dedicated storage for that `producer` node, making it possible to violate the shared inventory capacity constraint.
 - If a `producer` can produce more than 1 material, it is possible for it to produce all materials it is capable of producing simultaneously (if there are enough raw materials). This occurs because the model does not account for resource constraints (e.g., single reactor can only do reaction 1 or reaction 2, but not both simultaneously). However, these can be enforced manually with the reorder actions. Potential fixes (requires changing the source code):
-  - Drop inventory capacities to 0 when the production equipment is occupied. Requires modeling each production unit as its own node.
+  - Drop production capacities for all other products to 0 when the production equipment is occupied. Requires modeling each production unit as its own node.
   - Develop a production model (perhaps based on the Resource-Task Network paradigm)
 
 ## Creating a Supply Chain Network
@@ -247,7 +247,7 @@ The `SupplyChainEnv` Constructor has the following fields to store the simulatio
 
 ### Example 1
 
-This example has plant with unlimited raw material supply that converts `:B` to `:A` with a 1:1 stoichiometry. The plant sells both materials to a downstream retailer that has market demand for both materials. This system is modeled using 3 nodes:
+This example has plant that converts `:B` to `:A` with a 1:1 stoichiometry. The plant sells both materials to a downstream retailer that has market demand for both materials. This system is modeled using 3 nodes:
 - Plant: Node 1 (stores `:B`) => Node 2 (stores `:A`)
 - Retailer: Node 3 buys `:B` from Node 1 and `:A` from Node 2
 

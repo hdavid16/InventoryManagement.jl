@@ -13,8 +13,8 @@ set_prop!(net, :materials, [:A, :B])
 
 #specify parameters, holding costs and capacity, market demands and penalty for unfilfilled demand
 set_props!(net, 1, Dict(
-    :initial_inventory => Dict(:B => 125, :A => 125),
-    :holding_cost => Dict(:B => 0.001, :A => 0.002),
+    :initial_inventory => Dict(:B => Inf, :A => 125),
+    :holding_cost => Dict(:B => 0.000, :A => 0.002),
     :bill_of_materials => Dict((:B,:A) => -1),
     :supplier_priority => Dict(:A => 1)
 ))

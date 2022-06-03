@@ -3,7 +3,7 @@
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0,
-                        adjust_expected_consumption::Bool = true)
+                        adjust_expected_consumption::Bool = false)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
@@ -15,14 +15,14 @@ Apply an inventory policy to specify the replinishment orders for each material
 - `policy_type`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (keys).
 - `review_period`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
 - `min_order_qty`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
-- `adjust_expected_consumption`: should the system be assumed to be centralized? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this.
+- `adjust_expected_consumption`: should the system be assumed to be centralized (default: `false`)? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this.
 """
 function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::Dict;
                         policy_variable::Union{Dict,Symbol} = :inventory_position,
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0,
-                        adjust_expected_consumption::Bool = true)
+                        adjust_expected_consumption::Bool = false)
 
     #check review period; if not in review period, send null action
     null_action = zeros(length(env.materials)*ne(env.network))
