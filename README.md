@@ -36,10 +36,7 @@
 - `Markets`: Nodes where end-customers place final product orders (e.g., retailer). 
 
 These types of nodes can be used to model the following components of a supply network:
-- `Manufacturing Plants`: Plants are modeled using at least two nodes joined by a directed arc:
-  - Raw material storage node: Upstream `producer` node that stores raw materials and the plant's `bill of materials`.
-  - Product storage node: Downstream `distributor` node that stores the materials produced at the plant.
-  - Arc: the time elapsed between the consumption of raw materials and the production of goods (production time) is modeled with the arc lead time.
+- `Manufacturing Plants`: Plants are modeled using a single node with self-loop. The self-loop is an arc for the node to source products from itself via production. The time elapsed between the consumption of raw materials and the production of goods (production time) is modeled with the arc lead time.
 - `Distribution Centers`: DCs are modeled using `distributor` nodes.
 
 Note: Any node can be marked as a `market` node to indicate that there is external demand for one or more materials stored at that node. This allows external demand at distribution centers or at manufacturing plants (either for raw materials or products).

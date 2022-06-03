@@ -79,13 +79,9 @@ function fulfill_from_production!(
             row.quantity -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
             #consume reactant
             for rmat in rmat_names 
-                # required = order_amount * bom[rmat,mat] #negative number
                 consumed = accepted_prod * bom[rmat,mat] #negative number
-                # unfulfilled = -required + consumed
-                # push!(x.demand, [x.period, (src,src), rmat, -required, -consumed, missing, unfulfilled, missing]) #log demand for raw material (mark the arc as (src,src) and set lead time to missing to indicate production demand)
                 supply_grp[(node = src, material = rmat)].level[1] += consumed
                 raw_orders_grp[(id = row.id, material = rmat)].quantity[1] += consumed
-                # push!(x.demand, [x.period, (src,:production), rmat, -required, -consumed, lead, 0, missing]) #log demand for raw material (mark the arc as (src,:production))
             end
             #schedule coproduction
             for cmat in cmat_names

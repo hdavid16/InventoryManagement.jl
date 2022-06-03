@@ -1,5 +1,4 @@
 #2-echelon system with variable demand
-
 using Distributions
 using InventoryManagement
 

@@ -29,7 +29,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     !isvalid_period(env.period, review_period) && return null_action
 
     #read parameters
-    nodes = reverse(topological_sort_by_dfs(env.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
+    nodes = reverse(topological_sort(env.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
     source_nodes = filter(n -> isempty(inneighbors(env.network, n)), nodes) #source nodes (can't place replenishment orders)
     sink_nodes = filter(n -> isempty(outneighbors(env.network, n)), nodes) #sink nodes (can't fulfill replenishment orders)
     request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
@@ -150,7 +150,7 @@ Get expected raw material consumption at the producer node for downstream reques
 """
 function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
     consume = 0
-    successors = outneighbors(env.network, n) #get successor nodes
+    successors = setdiff(outneighbors(env.network, n), n) #get successor nodes
     if isconsumed(env, n, mat)
         bom = get_prop(env.network, n, :bill_of_materials)
         mprods = names(filter(i -> i < 0, bom[mat,:]), 1) #find which products are produced from mat

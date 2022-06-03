@@ -109,12 +109,14 @@ function inventory_components(
     backlog = 0 #initialize backlog for orders placed by successors
     if x.options[:backlog]
         backlog_window = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
-        n_out = vcat(:production,n,outneighbors(x.network, n)) #backlog includes raw material conversion, market sales, downstream replenishments
+        n_out = vcat( #nodes accounted for in backlog
+            :production, #raw material conversion
+            setdiff(outneighbors(x.network, n), n), #downstream replenishments
+            n in x.markets ? n : [], #market sales
+        ) #backlog includes raw material conversion, market sales, downstream replenishments
         backlog = calculate_backlog(x,n,n_out,mat,backlog_window) 
-        n_in = vcat(inneighbors(x.network, n)) #backorder includes previous replenishment orders placed to upstream nodes
+        n_in = inneighbors(x.network, n) #backorder includes previous replenishment orders placed to upstream nodes
         backorder = calculate_backlog(x,n_in,n,mat,backlog_window) 
-        # backlog = sum(filter(:arc => i -> i[1] == n, orders_grp[(material = mat,)], view=true).unfulfilled)
-        # backorder = sum(filter(:arc => i -> i[2] == n && i[2] != i[1], orders_grp[(material = mat,)], view=true).unfulfilled)
     end
     ilevel = onhand - backlog #inventory level
     iorder = pipeline + backorder #inventory on order

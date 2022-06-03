@@ -18,7 +18,7 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     leads = Dict((a,mat) => rand(get_prop(x.network, a, :lead_time)[mat]) for a in edges(x.network), mat in mats)
     servs = Dict((a,mat) => rand(get_prop(x.network, a, :service_lead_time)[mat]) for a in edges(x.network), mat in mats)
     #identify nodes that can place requests
-    nodes = topological_sort_by_dfs(x.network) #sort nodes in topological order so that orders are placed moving down the network
+    nodes = topological_sort(x.network) #sort nodes in topological order so that orders are placed moving down the network
     source_nodes = filter(n -> isempty(inneighbors(x.network, n)), nodes) #source nodes (can't place replenishment orders)
     request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
     #get on hand inventory
@@ -45,10 +45,10 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             end
             #create order and save service lead time
             create_order!(x, a..., mat, amount, serv)
-            if !isproduced(x, sup, mat) #if material is not produced, try to fulfill from stock
-                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
-            else #if material is produced, try to fulfill with production
+            if sup == req
                 fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
+            else
+                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
             end
         end
     end
@@ -60,9 +60,6 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             filter(:id => id -> id in expired_orders, x.orders, view=true),
             [:arc, :fulfilled] => ByRow((a,log) -> vcat(log, (time=x.period, supplier=a[1], amount=:lost_sale))) => :fulfilled
         )
-        # for order_id in expired_orders
-        #     push!(x.orders[order_id,:fulfilled], (time=x.period, supplier=src, amount=:lost_sale)) #update fulfilled column in order history (date, supplier, amount fulfilled)
-        # end
         filter!(:due => t -> t > 0, x.open_orders)
     end
 
@@ -93,7 +90,7 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Union{Symbol,
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, (sup,req), mat, amount, []]) #update order history
     push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_lead_time]) #add order to temp order df
-    if isproduced(x, sup, mat)
+    if sup == req && isproduced(x, sup, mat)
         bom = get_prop(x.network, sup, :bill_of_materials)
         rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names

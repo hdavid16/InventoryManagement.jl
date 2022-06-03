@@ -5,6 +5,7 @@ using Reexport
 using Random
 using IntervalSets
 using Distributions
+using LinearAlgebra
 import StatsBase: mean, std
 
 @reexport using Graphs
