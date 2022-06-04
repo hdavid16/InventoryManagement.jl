@@ -82,11 +82,11 @@ function exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
 end
 
 """
-    create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
+    create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
 
 Create and log order.
 """
-function create_order!(x::SupplyChainEnv, sup::Int, req::Int, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
+function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, (sup,req), mat, amount, []]) #update order history
     push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_lead_time]) #add order to temp order df
@@ -137,7 +137,6 @@ function simulate_markets!(x::SupplyChainEnv)
         dmnd_dist_dict = get_prop(x.network, n, :demand_distribution)
         serv_dist_dict = get_prop(x.network, n, :service_lead_time)
         for mat in x.materials
-            @assert !(n in x.producers && isproduced(x,n,mat)) "Node $n is marked as a market node and producer node, but $mat is produced at this node. The market should be associated with the product storage node of the plant (downstream node), not the raw material storage node."
             p = dmnd_freq_dict[mat] #probability of demand occuring
             dmnd = dmnd_dist_dict[mat] #demand distribution
             serv_lt = serv_dist_dict[mat] #service lead time
@@ -160,6 +159,6 @@ Create external demand at node `n` for material `mat` for quantity `q` with serv
 function external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
     supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
     supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
-    create_order!(x, n, n, mat, q, serv)
-    fulfill_from_stock!(x, n, n, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
+    create_order!(x, n, :market, mat, q, serv)
+    fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
 end

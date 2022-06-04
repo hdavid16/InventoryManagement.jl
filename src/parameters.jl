@@ -89,12 +89,15 @@ function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Ve
     arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_lead_time]
     all_market_keys = vcat(all_keys, market_keys)
     all_plant_keys = vcat(all_keys, plant_keys)
+    all_market_plant_keys = vcat(all_keys, market_keys, plant_keys)
     #list of nodes and arcs
+    mrkt_plants = mrkts ∩ plants
     env_obj = vcat(nodes, arcs)
     #assign keys to each object
     env_keys = Dict(
         obj => 
             obj in nodes ? 
+                obj in mrkt_plants ? all_market_plant_keys :
                 obj in mrkts ? all_market_keys : 
                 obj in plants ? all_plant_keys : 
                 all_keys : 

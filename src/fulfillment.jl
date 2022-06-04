@@ -1,27 +1,29 @@
 """
     fulfill_from_stock!(
-        x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
+        x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
         lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
     )
 
 Fulfill request from on-hand inventory.
 """
 function fulfill_from_stock!(
-    x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
+    x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
     lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
 )
     #available supply
     supply = supply_grp[(node = src, material = mat)].level[1]
+    #node from which to check early_fulfillment and partial_fulfillment param values
+    indicator_node = dst == :market ? src : dst
     
     #loop through orders
-    if get_prop(x.network, dst, :early_fulfillment)[mat]
+    if get_prop(x.network, indicator_node, :early_fulfillment)[mat]
         orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.open_orders, view = true)
     else #only attempt to fulfill orders that have expired their service lead time
         orders_df = filter([:arc, :material, :due] => (a,m,t) -> a == (src,dst) && m == mat && t <= 0, x.open_orders, view = true)
     end
     for row in eachrow(orders_df)
         order_amount = row.quantity
-        if get_prop(x.network, dst, :partial_fulfillment)[mat]
+        if get_prop(x.network, indicator_node, :partial_fulfillment)[mat]
             accepted_inv = min(order_amount, supply) #amount fulfilled from inventory
         else
             accepted_inv = order_amount <= supply ? order_amount : 0 #only accept full order or nothing at all
@@ -31,7 +33,7 @@ function fulfill_from_stock!(
             push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_inv)) #update fulfilled column in order history (date, supplier, amount fulfilled)
             push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
             supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
-            !ismissing(pipeline_grp) && make_shipment!(x, src, dst, mat, accepted_inv, lead, pipeline_grp) #ship material (unless it is external demand)
+            dst != :market && make_shipment!(x, src, dst, mat, accepted_inv, lead, pipeline_grp) #ship material (unless it is external demand)
         end
         if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate
             log_unfulfilled_demand!(x, row, accepted_inv)
