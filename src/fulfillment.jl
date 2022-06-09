@@ -12,21 +12,19 @@ function fulfill_from_stock!(
 )
     #available supply
     supply = supply_grp[(node = src, material = mat)].level[1]
-    #node from which to check early_fulfillment and partial_fulfillment param values
+
+    #check if partial fulfillment is allowed
     indicator_node = dst == :market ? src : dst
+    partial_fulfillment = get_prop(x.network, indicator_node, :partial_fulfillment)[mat]
     
-    #loop through orders
-    if get_prop(x.network, indicator_node, :early_fulfillment)[mat]
-        orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.open_orders, view = true)
-    else #only attempt to fulfill orders that have expired their service lead time
-        orders_df = filter([:arc, :material, :due] => (a,m,t) -> a == (src,dst) && m == mat && t <= 0, x.open_orders, view = true)
-    end
+    #loop through orders on relevant arc
+    orders_df = relevant_orders(x, src, dst, mat)
     for row in eachrow(orders_df)
         order_amount = row.quantity
-        if get_prop(x.network, indicator_node, :partial_fulfillment)[mat]
+        if partial_fulfillment
             accepted_inv = min(order_amount, supply) #amount fulfilled from inventory
         else
-            accepted_inv = order_amount <= supply ? order_amount : 0 #only accept full order or nothing at all
+            accepted_inv = order_amount <= supply ? order_amount : 0. #only accept full order or nothing at all
         end
         if accepted_inv > 0
             row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
@@ -60,14 +58,19 @@ function fulfill_from_production!(
     rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
     cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
 
-    #loop through orders
-    if get_prop(x.network, dst, :early_fulfillment)[mat]
-        orders_df = filter([:arc, :material] => (a,m) -> a == (src,dst) && m == mat, x.open_orders, view = true)
-    else #only attempt to fulfill orders that have expired their service lead time
-        orders_df = filter([:arc, :material, :due] => (a,m,t) -> a == (src,dst) && m == mat && t <= 0, x.open_orders, view = true)
-    end
-    raw_orders_df = filter([:id, :material] => (id,m) -> id in orders_df.id && m != mat, x.open_orders, view = true)
+    #get relevant raw material orders (:production)
+    raw_orders_df = filter(
+        [:id, :material] => 
+            (id,m) -> 
+                id in orders_df.id && 
+                m in rmat_names, 
+        x.open_orders, 
+        view = true
+    )
     raw_orders_grp = groupby(raw_orders_df, [:id, :material])
+
+    #loop through orders on relevant arc
+    orders_df = relevant_orders(x, src, dst, mat)
     for row in eachrow(orders_df)
         cap_and_sup = get_capacity_and_supply(src, mat, bom, rmat_names, cmat_names, capacities, supply_grp)
         order_amount = row.quantity #amount requested in order
