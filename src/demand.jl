@@ -109,13 +109,15 @@ function log_unfulfilled_demand!(x::SupplyChainEnv, order_row::DataFrameRow, acc
     sup, req = order_row.arc
     mat = order_row.material
     new_alloc = missing
-    sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
-    if x.options[:reallocate] && sup != req && length(sup_priority) > 1 #don't reallocate if external demand
-        sup_priority = vcat(sup_priority, sup_priority[1]) #add top priority to the end of the list so that lowest priority reallocates to top priority (cycle)
-        next_sup_loc = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
-        new_sup = sup_priority[next_sup_loc] #next supplier in line
-        new_alloc = (new_sup, req) #store new arc where reallocated
-        order_row.arc = new_alloc #update x.open_orders to reallocate material
+    if x.options[:reallocate] && (sup != req || req != :market) #don't reallocate if external demand or production request
+        sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
+        if length(sup_priority) > 1
+            sup_priority = vcat(sup_priority, sup_priority[1]) #add top priority to the end of the list so that lowest priority reallocates to top priority (cycle)
+            next_sup_loc = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
+            new_sup = sup_priority[next_sup_loc] #next supplier in line
+            new_alloc = (new_sup, req) #store new arc where reallocated
+            order_row.arc = new_alloc #update x.open_orders to reallocate material
+        end
     end
     if accepted > 0 #order was partially fulfilled
         x.demand[end,:unfulfilled] = order_row.quantity
