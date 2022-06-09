@@ -56,8 +56,6 @@ function update_inventories!(x::SupplyChainEnv)
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
     pipeline_df = filter(:period => j -> j == x.period, x.inventory_pipeline, view=true) #pipeline inventories
     pipeline_grp = groupby(pipeline_df, :material) #group by material
-    orders_df = filter([:period, :reallocated] => (i1, i2) -> i1 == x.period && ismissing(i2), x.demand, view=true) #replenishment orders from current period
-    orders_grp = groupby(orders_df, :material) #group by material
 
     #initialize echelon inventory positions
     initialize_echelons!(x)
@@ -66,7 +64,7 @@ function update_inventories!(x::SupplyChainEnv)
     
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network), mat in x.materials
-        ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp, orders_grp)
+        ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp)
         push!(x.inventory_level, [x.period, n, mat, ilevel]) #update inventory level
         push!(x.inventory_position, [x.period, n, mat, ipos]) #update inventory position
         update_echelons!(x, n, mat, ipos, ech_grp) #update echelon stocks
@@ -93,7 +91,6 @@ end
     inventory_components(
         x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
         pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
-        orders_grp::GroupedDataFrame
     )
 
 Extract components to determine inventory level and position.
@@ -101,7 +98,6 @@ Extract components to determine inventory level and position.
 function inventory_components(
     x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
     pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
-    orders_grp::GroupedDataFrame
 )
     pipeline = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = mat,)], view=true).level) #in-transit inventory
     onhand = onhand_grp[(node = n, material = mat)].level[1] #on_hand inventory
@@ -112,7 +108,7 @@ function inventory_components(
         n_out = vcat( #nodes accounted for in backlog
             :production, #raw material conversion
             setdiff(outneighbors(x.network, n), n), #downstream replenishments
-            n in x.markets ? n : [], #market sales
+            :market, #market sales
         ) #backlog includes raw material conversion, market sales, downstream replenishments
         backlog = calculate_backlog(x,n,n_out,mat,backlog_window) 
         n_in = inneighbors(x.network, n) #backorder includes previous replenishment orders placed to upstream nodes
