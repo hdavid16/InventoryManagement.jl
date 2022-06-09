@@ -36,12 +36,20 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             lead = float(leads[Edge(a...), mat]) #sampled lead time
             serv = float(servs[Edge(a...), mat]) #sampled service lead time
             amount = act[mat, a] #amount requested
-            #calculate outstanding orders (backlog) (will be 0 if assuming lost sales)
-            backlog = calculate_backlog(x, a..., mat)
             #continue to next iteration if no request made and no backlog
-            if iszero(amount) && iszero(backlog)
-                push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
-                continue 
+            if iszero(amount)
+                #calculate outstanding orders (backlog) to determine if an order should be placed even if amount = 0 (will be 0 if assuming lost sales)
+                backlog = calculate_backlog(x, a..., mat)
+                if req in x.markets
+                    backlog += calculate_backlog(x, req, [:market], mat)
+                end
+                if req in x.producers
+                    backlog += calculate_backlog(x, req, [:production], mat)
+                end
+                if iszero(backlog)
+                    push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
+                    continue 
+                end
             end
             #create order and save service lead time
             create_order!(x, a..., mat, amount, serv)
@@ -49,6 +57,10 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
                 fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
             else
                 fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
+            end
+            #check for any backlogged market demand orders
+            if x.options[:backlog] && req in x.markets 
+                fulfill_from_stock!(x, req, :market, mat, 0., supply_grp, missing)
             end
         end
     end
@@ -101,6 +113,39 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
 end
 
 """
+    relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+
+Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat`
+"""
+function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    #node from which to check early_fulfillment param value
+    indicator_node = dst == :market ? src : dst
+    #loop through orders on relevant arc
+    if get_prop(x.network, indicator_node, :early_fulfillment)[mat]
+        orders_df = filter(
+            [:arc, :material] => 
+                (a,m) -> 
+                    a == (src,dst) && #nodes with the arc
+                    m == mat, #orders for the same material
+            x.open_orders, 
+            view = true
+        )
+    else #only attempt to fulfill orders that have expired their service lead time
+        orders_df = filter(
+            [:arc, :material, :due] => 
+                (a,m,t) -> 
+                    a == (src,dst) && #nodes with the arc
+                    m == mat &&  #orders for the same material
+                    t <= 0, #expired orders
+            x.open_orders, 
+            view = true
+        )
+    end
+
+    return orders_df
+end
+
+"""
     log_unfulfilled_demand!(x::SupplyChainEnv, order_row::DataFrameRow, accepted::Float64)
 
 Calculate unfulfilled demand and reallocate order to next supplier in the priority list.
@@ -144,10 +189,11 @@ function simulate_markets!(x::SupplyChainEnv)
             serv_lt = serv_dist_dict[mat] #service lead time
             #place p orders
             for _ in 1:floor(p) + rand(Bernoulli(p % 1)) #p is the number of orders. If fractional, the fraction is the likelihood of rounding up.
-                external_order!(x,n,mat,
-                    rand(dmnd), #sample demand and demand probability
-                    rand(serv_lt) #sample service lead time
-                )
+                q = rand(dmnd) #sample demand
+                slt = rand(serv_lt) #sample service lead time
+                if q > 0
+                    external_order!(x,n,mat,q,slt)
+                end
             end
         end
     end
