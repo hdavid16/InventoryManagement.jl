@@ -58,7 +58,8 @@ function fulfill_from_production!(
     rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
     cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
 
-    #get relevant raw material orders (:production)
+    #get relevant orders on that arc & raw material orders (:production)
+    orders_df = relevant_orders(x, src, dst, mat)
     raw_orders_df = filter(
         [:id, :material] => 
             (id,m) -> 
@@ -68,16 +69,14 @@ function fulfill_from_production!(
         view = true
     )
     raw_orders_grp = groupby(raw_orders_df, [:id, :material])
-
     #loop through orders on relevant arc
-    orders_df = relevant_orders(x, src, dst, mat)
     for row in eachrow(orders_df)
         cap_and_sup = get_capacity_and_supply(src, mat, bom, rmat_names, cmat_names, capacities, supply_grp)
         order_amount = row.quantity #amount requested in order
         if get_prop(x.network, dst, :partial_fulfillment)[mat]
             accepted_prod = min(order_amount, cap_and_sup...) #fulfill remaining with available capacity
         else
-            accepted_prod = order_amount <= minimum(cap_and_sup) ? order_amount : 0 #only accept full order or nothing at all
+            accepted_prod = order_amount <= minimum(cap_and_sup) ? order_amount : 0. #only accept full order or nothing at all
         end
         if accepted_prod > 0
             #fulfill order (may be partial)
