@@ -120,8 +120,10 @@ Return filtered dataframe of active orders relevant to the arc `(src, dst)` for 
 function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
     #node from which to check early_fulfillment param value
     indicator_node = dst == :market ? src : dst
+    param_key = dst == :market ? :market_early_fulfillment : :early_fulfillment
+    early_fulfillment = get_prop(x.network, indicator_node, param_key)[mat]
     #loop through orders on relevant arc
-    if get_prop(x.network, indicator_node, :early_fulfillment)[mat]
+    if early_fulfillment
         orders_df = filter(
             [:arc, :material] => 
                 (a,m) -> 

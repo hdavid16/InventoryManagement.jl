@@ -191,8 +191,10 @@ The graph metadata should have the following fields in its metadata:
 - `:initial_inventory::Dict`: initial inventory for each material (`keys`). Default = `0`.
 - `:inventory_capacity::Dict`: maximum inventory for each material (`keys`). Default = `Inf`.
 - `:holding_cost::Dict`: unit holding cost for each material (`keys`). Default = `0`.
-- `:early_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled before their due date for each material (`keys`). Default = `true`.
-- `:partial_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
+- `:early_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) indicates if the node accepts orders being fulfilled before their due date for each material (`keys`). Default = `true`.
+- `:market_early_fulfillment::Dict`: (`true`/`false`) indicates if the market accepts orders being fulfilled before their due date for each material (`keys`). Default = `true`.
+- `:partial_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) indicates if the node accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
+- `:market_partial_fulfillment::Dict`: (`true`/`false`) indicates if the market accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of supplier priorities (from high to low) for each material (`keys`). When a request cannot be fulfilled due to insufficient productio capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D where D <: Number`. Default = `0`.
 - `:demand_frequency::Dict`: number of times demand occurs per period on average for each material (`keys`). Default = `1`.

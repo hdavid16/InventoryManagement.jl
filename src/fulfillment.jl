@@ -15,7 +15,8 @@ function fulfill_from_stock!(
 
     #check if partial fulfillment is allowed
     indicator_node = dst == :market ? src : dst
-    partial_fulfillment = get_prop(x.network, indicator_node, :partial_fulfillment)[mat]
+    param_key = dst == :market ? :market_partial_fulfillment : :partial_fulfillment
+    partial_fulfillment = get_prop(x.network, indicator_node, param_key)[mat]
     
     #loop through orders on relevant arc
     orders_df = relevant_orders(x, src, dst, mat)

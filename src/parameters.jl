@@ -84,7 +84,7 @@ Create a dictionary with the parameter keys for each node/arc in the network
 function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
     #lists of parameter keys
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :service_lead_time]
+    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :service_lead_time, :market_partial_fulfillment, :market_early_fulfillment]
     plant_keys = [:bill_of_materials, :production_capacity]
     arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_lead_time]
     all_market_keys = vcat(all_keys, market_keys)
@@ -178,7 +178,11 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
         merge!(param_dict, Dict(mat => inneighbors(network, obj)))
     elseif key == :partial_fulfillment #allow partial fulfillment by default
         merge!(param_dict, Dict(mat => true))
+    elseif key == :market_partial_fulfillment #allow partial fulfillment by default
+        merge!(param_dict, Dict(mat => true))
     elseif key == :early_fulfillment #allow early fulfillment by default (before service lead time expires)
+        merge!(param_dict, Dict(mat => true))
+    elseif key == :market_early_fulfillment #allow early fulfillment by default (before service lead time expires)
         merge!(param_dict, Dict(mat => true))
     else #all others default to 0
         set_prop!(network, obj..., key, merge(param_dict, Dict(mat => 0.)))
