@@ -6,8 +6,10 @@ Calculate mean service level and fill rate for each node and each material in th
 If there is more than 1 supplier and reallocation of requests occurs, the metric will be associated with the original supplier.
 """
 function calculate_service_measures!(env::SupplyChainEnv)
+    #join demand tables
+    demand = vcat([insertcols!(df, :arc => a, :material => m) for ((a,m),df) in env.demand]...)
     #filter out times with no demand
-    demand = filter(i -> i.quantity > 0, env.demand) 
+    filter!(i -> i.quantity > 0, demand) 
     #generate a column with the supplier for each order
     transform!(demand,
         :arc => ByRow(first) => :supplier

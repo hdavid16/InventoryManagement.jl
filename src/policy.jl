@@ -40,11 +40,11 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     #check inputs
     check_policy_inputs!(reorder_point, policy_param, review_period, min_order_qty, mats, request_nodes, supply_nodes)
 
-    #filter data for policy
-    state1_df = filter(:period => j -> j == env.period, env.inventory_position, view=true) #inventory position
-    state1_grp = groupby(state1_df, [:node, :material]) #group by node and material
-    state2_df = filter(:period => j -> j == env.period, env.echelon_stock, view=true) #inventory position
-    state2_grp = groupby(state2_df, [:node, :material]) #group by node and material
+    # #filter data for policy
+    # state1_df = filter(:period => j -> j == env.period, env.inventory_position, view=true) #inventory position
+    # state1_grp = groupby(state1_df, [:node, :material]) #group by node and material
+    # state2_df = filter(:period => j -> j == env.period, env.echelon_stock, view=true) #inventory position
+    # state2_grp = groupby(state2_df, [:node, :material]) #group by node and material
 
     #initialize action matrix
     action = NamedArray(
@@ -57,7 +57,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
         reorder_point[n,mat] < 0 && continue #if trigger level is negative, skip it
         review_period isa Dict && !isvalid_period(env.period, review_period[n,mat]) && continue #if not a review period, skip
         #review inventory at the node
-        state = get_inventory_state(n, mat, policy_variable, state1_grp, state2_grp)
+        state = get_inventory_state(env, n, mat, policy_variable)
         #if n is a plant, adjust the inventory state by the order from the downstream node
         if centralized
             state += get_expected_consumption(env, n, mat, action)
@@ -121,23 +121,24 @@ function check_policy_inputs!(
 end
 
 """
-    get_inventory_state(
-        n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol},
-        state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
+    get_inventory_state(env::SupplyChainEnv,
+        n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol}
     )
 
 Check the inventory state at node `n` for material `mat`.
 """
-function get_inventory_state(
-    n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol},
-    state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
+function get_inventory_state(env::SupplyChainEnv,
+    n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol}#,
+    # state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
 )
     pol_var = policy_variable isa Dict ? policy_variable[n] : policy_variable
     @assert pol_var in [:inventory_position, :echelon_stock] "Policy variable must be either `:inventory_position` or `:echelon_stock`."
     if pol_var == :inventory_position
-        state = state1_grp[(node = n, material = mat)].level[1]
+        state = env.inventory_position[n,mat][env.period+1,:level]
+        # state = state1_grp[(node = n, material = mat)].level[1]
     elseif pol_var == :echelon_stock
-        state = state2_grp[(node = n, material = mat)].level[1]
+        state = env.echelon_stock[n,mat][env.period+1,:level]
+        # state = state2_grp[(node = n, material = mat)].level[1]
     end
 
     return state

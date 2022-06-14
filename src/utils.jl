@@ -31,17 +31,17 @@ end
 isconsumed(env::SupplyChainEnv, n, mat) = isconsumed(env.network,n,mat)
 
 """
-    get_capacity_and_supply(
+    get_capacity_and_supply(x::SupplyChainEnv,
         bom::NamedArray, rmat_names::Vector, cmat_names::Vector, 
-        capacities::Dict, supply_grp::GroupedDataFrame
+        capacities::Dict
     )
 
 Get available capacity and material supply at producer.
 """
-function get_capacity_and_supply(
+function get_capacity_and_supply(x::SupplyChainEnv,
     n::Int, mat::Union{Symbol,String}, bom::NamedArray, 
     rmat_names::Vector, cmat_names::Vector, 
-    capacities::Dict, supply_grp::GroupedDataFrame
+    capacities::Dict#, supply_grp::GroupedDataFrame
 )
     #commit production at plant
     capacity = [] #get production capacity
@@ -49,7 +49,8 @@ function get_capacity_and_supply(
     isempty(rmat_names) && return [0],[0] #if material is not produced at the node, then return zero capacity and zero supply
     push!(capacity, capacities[n][mat]) #production capacity for that material
     for rmat in rmat_names #check raw material supply
-        sup_pp = supply_grp[(node = n, material = rmat)].level[1] #supply of material involved in BOM
+        sup_pp = x.inventory_on_hand[n,rmat][x.period+1,:level] #supply of material involved in BOM
+        # sup_pp = supply_grp[(node = n, material = rmat)].level[1] #supply of material involved in BOM
         push!(mat_supply, - sup_pp / bom[rmat,mat]) #only account for raw materials that are in the BOM
     end 
     for cmat in cmat_names #add capacity constraint for any co-products (scaled by stoichiometry)
