@@ -31,7 +31,8 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     #place requests
     for req in request_nodes #loop by nodes placing requests (in reverse topological order)
         sup_priority = get_prop(x.network, req, :supplier_priority) #get supplier priority list
-        for mat in mats, sup in sup_priority[mat] #loop by material and supplier priority
+        req_mats = get_prop(x.network, req, :node_materials) #get materials that are compatible with requester node
+        for mat in req_mats, sup in sup_priority[mat] #loop by material and supplier priority
             a = (sup, req) #arc
             lead = float(leads[Edge(a...), mat]) #sampled lead time
             serv = float(servs[Edge(a...), mat]) #sampled service lead time
@@ -39,28 +40,20 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             #continue to next iteration if no request made and no backlog
             if iszero(amount)
                 #calculate outstanding orders (backlog) to determine if an order should be placed even if amount = 0 (will be 0 if assuming lost sales)
-                backlog = calculate_backlog(x, a..., mat)
-                if req in x.markets
-                    backlog += calculate_backlog(x, req, [:market], mat)
-                end
-                if req in x.producers
-                    backlog += calculate_backlog(x, req, [:production], mat)
-                end
+                arcs_list = [a,(req,:production)]
+                backlog = calculate_backlog(x, arcs_list, mat) #include any outstanding raw material conversion orders (:production)
                 if iszero(backlog)
                     push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
                     continue 
                 end
+            else
+                #create order and save service lead time
+                create_order!(x, a..., mat, amount, serv)
             end
-            #create order and save service lead time
-            create_order!(x, a..., mat, amount, serv)
             if sup == req
                 fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
             else
                 fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
-            end
-            #check for any backlogged market demand orders
-            if x.options[:backlog] && req in x.markets 
-                fulfill_from_stock!(x, req, :market, mat, 0., supply_grp, missing)
             end
         end
     end
@@ -87,9 +80,12 @@ end
 Abort order placement.
 """
 function exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
-    for a in arcs, mat in x.materials
-        backlog = calculate_backlog(x, a..., mat)
-        push!(x.demand, [x.period, a, mat, 0, 0, 0, backlog, missing])
+    for a in arcs
+        dst_mats = get_prop(x.network, a[2], :node_materials)
+        for mat in dst_mats
+            backlog = calculate_backlog(x, [a], mat)
+            push!(x.demand, [x.period, a, mat, 0, 0, 0, backlog, missing])
+        end
     end
 end
 
@@ -194,21 +190,11 @@ function simulate_markets!(x::SupplyChainEnv)
                 q = rand(dmnd) #sample demand
                 slt = rand(serv_lt) #sample service lead time
                 if q > 0
-                    external_order!(x,n,mat,q,slt)
+                    create_order!(x, n, :market, mat, q, slt)
                 end
             end
+            #fulfill orders from stock (will include any backlogged orders)
+            fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
         end
     end
-end
-
-"""
-    external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
-
-Create external demand at node `n` for material `mat` for quantity `q` with service lead time `serv`.
-"""
-function external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
-    supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
-    supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
-    create_order!(x, n, :market, mat, q, serv)
-    fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
 end
