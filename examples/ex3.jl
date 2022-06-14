@@ -1,4 +1,4 @@
-#3-echelon supply chain with market demand at levels 1 and 2 of the chain
+#Example 3: 3-echelon supply chain with market demand at levels 1 and 2 of the chain
 using Distributions
 using InventoryManagement
 
@@ -55,6 +55,6 @@ simulate_policy!(env, s, S; policy_type, review_period, policy_variable, central
 ##make plots
 using DataFrames, StatsPlots
 #inventory level
-df = filter(i -> i.node > 1, env.echelon_stock)
+df = vcat([insertcols!(d, :node => n, :material => m) for ((n,m),d) in env.echelon_stock if n > 1]...)
 fig1 = @df df plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
                     xlabel="period", ylabel="echelon stock", ylim=(min(0, minimum(df.level)),maximum(df.level)))

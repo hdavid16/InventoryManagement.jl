@@ -1,4 +1,4 @@
-#2-echelon system with variable demand
+#Example 2: 2-echelon system with variable demand
 using Distributions
 using InventoryManagement
 
@@ -34,12 +34,11 @@ simulate_policy!(env, r, Q; policy_type, review_period)
 #make plots
 using StatsPlots
 #unfulfilled market demand
-demand = combine(
-    groupby(filter(i -> i.arc[1] == 2, env.demand), [:period,:arc,:material]),
-    :unfulfilled => sum => :unfulfilled
+fig1 = @df env.demand[(2,:market),:A] plot(
+    :period, :unfulfilled, linetype=:steppost, lab="backlog",
+    xlabel="period", ylabel="level", title="Node 2, Material A"
 )
-fig1 = plot(demand.period, demand.unfulfilled, linetype=:steppost, lab="backlog",
-                    xlabel="period", ylabel="level", title="Node 2, Material A")
-#add inventory position
-inventory_on_hand = filter(i -> i.level < Inf, env.inventory_on_hand)
-plot!(fig1, inventory_on_hand.period, inventory_on_hand.level, linetype=:steppost, lab = "on-hand inventory")
+#add inventory on hand
+@df env.inventory_on_hand[2,:A] plot!(fig1, 
+    :period, :level, linetype=:steppost, lab = "on-hand inventory"
+)

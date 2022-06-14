@@ -1,4 +1,4 @@
-#2 - echelon system with production
+#Example 1: 2 - echelon system with production
 using InventoryManagement
 
 #define network topology and materials:
@@ -63,7 +63,8 @@ fig1 = @df profit plot(
 )
 
 #inventory position
-fig2 = @df env.inventory_position plot(
+inventory_position = vcat([insertcols!(df, :node => n, :material => m) for ((n,m),df) in env.inventory_position]...)
+fig2 = @df inventory_position plot(
     :period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, 
     legend = :bottomleft, xlabel="period", ylabel="inventory position", yticks = 0:25:125
 )
