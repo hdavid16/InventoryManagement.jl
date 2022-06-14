@@ -31,10 +31,11 @@ function enforce_inventory_limits!(x::SupplyChainEnv)
     on_hand_df = filter(:period => j -> j == x.period, x.inventory_on_hand, view=true) #on_hand inventories
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material for easier lookup
     for n in vertices(x.network)
-        node_max_inv = get_prop(x.network, n, :inventory_capacity)
-        for mat in x.materials
-            max_inv = node_max_inv[mat]
-            (iszero(max_inv) || isinf(max_inv)) && continue #skip iteration if node doesn't store that material or has infinite capacity
+        node_mats = get_prop(x.network, n, :node_materials)
+        node_cap = get_prop(x.network, n, :inventory_capacity)
+        for mat in node_mats
+            max_inv = node_cap[mat]
+            isinf(max_inv) && continue #skip iteration if node doesn't store that material or has infinite capacity
             onhand = onhand_grp[(node = n, material = mat)].level[1] #onhand inventory
             if onhand > max_inv
                 onhand_grp[(node = n, material = mat)].level[1] = max_inv
@@ -63,30 +64,30 @@ function update_inventories!(x::SupplyChainEnv)
     ech_grp = groupby(ech_df, [:node, :material]) #group by material
     
     #loop through nodes and update inventory levels, positions, and echelons
-    for n in vertices(x.network), mat in x.materials
-        ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp)
-        push!(x.inventory_level, [x.period, n, mat, ilevel]) #update inventory level
-        push!(x.inventory_position, [x.period, n, mat, ipos]) #update inventory position
-        update_echelons!(x, n, mat, ipos, ech_grp) #update echelon stocks
+    for n in vertices(x.network)
+        for mat in get_prop(x.network, n, :node_materials) #loop through materials that can be stored at that node #x.materials
+            ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp)
+            push!(x.inventory_level, [x.period, n, mat, ilevel]) #update inventory level
+            push!(x.inventory_position, [x.period, n, mat, ipos]) #update inventory position
+            update_echelons!(x, n, mat, ipos, ech_grp) #update echelon stocks
+        end
     end
 
 end
 
 """
-    calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Union{Symbol,String}, due_by::Real = Inf)
+    calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, due_by::Real = Inf)
 
-If `sup` isa `Int`, calculate quantity of material `mat` backlogged at `sup` node, 
-    destined to nodes in `req` with relative due date of `due_by`.
-If `req` isa `Int`, calculate pending orders to `req` placed to the nodes in `sup`.
+Calculate backlogged orders with relative due date of `due_by` on a list of `arcs` for a material `mat`.
 """
-function calculate_backlog(x::SupplyChainEnv, sup::Union{Int,Vector}, req::Union{Int,Symbol,Vector}, mat::Union{Symbol,String}, due_by::Real = Inf)
+function calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, due_by::Real = Inf)
     #get backlog from open orders
+    arcs_set = Set(arcs)
     due_orders = filter(
-        [:arc, :material, :due] => 
-            (a,m,d) -> 
-                a[1] in sup &&
-                a[2] in req && 
+        [:material, :arc, :due] => 
+            (m,a,d) -> 
                 m == mat && 
+                a in arcs_set &&
                 d <= due_by, 
         x.open_orders,
         view=true
@@ -114,14 +115,14 @@ function inventory_components(
     backlog = 0 #initialize backlog for orders placed by successors
     if x.options[:backlog]
         backlog_window = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
-        n_out = vcat( #nodes accounted for in backlog
-            :production, #raw material conversion
-            setdiff(outneighbors(x.network, n), n), #downstream replenishments
-            :market, #market sales
-        ) #backlog includes raw material conversion, market sales, downstream replenishments
-        backlog = calculate_backlog(x,n,n_out,mat,backlog_window) 
-        n_in = inneighbors(x.network, n) #backorder includes previous replenishment orders placed to upstream nodes
-        backorder = calculate_backlog(x,n_in,n,mat,backlog_window) 
+        arcs_out = vcat( #nodes accounted for in backlog
+            (n,:production), #raw material conversion
+            (n,:market), #market sales
+            [(n,succ) for succ in outneighbors(x.network,n) if n != succ] #downstream replenishments
+        )
+        backlog = calculate_backlog(x,arcs_out,mat,backlog_window) 
+        arcs_in = [(pred,n) for pred in inneighbors(x.network, n)] #backorder includes previous replenishment orders placed to upstream nodes
+        backorder = calculate_backlog(x,arcs_in,mat,backlog_window) 
     end
     ilevel = onhand - backlog #inventory level
     iorder = pipeline + backorder #inventory on order
@@ -137,10 +138,8 @@ end
 Initialize echelon stocks at the current period to 0.
 """
 function initialize_echelons!(x::SupplyChainEnv)
-    for n in vertices(x.network), mat in x.materials
-        if get_prop(x.network, n, :inventory_capacity)[mat] > 0
-            push!(x.echelon_stock, [x.period, n, mat, 0])
-        end
+    for n in vertices(x.network), mat in get_prop(x.network, n, :node_materials)
+        push!(x.echelon_stock, [x.period, n, mat, 0])
     end
 end
 
@@ -151,7 +150,7 @@ Update echelon stocks for current time period.
 """
 function update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, ipos::Float64, ech_grp::GroupedDataFrame)
     for ech in findall(i -> n in i, x.echelons) #identify which echelons have been affected and add to these
-        if get_prop(x.network, ech, :inventory_capacity)[mat] > 0 #only add to echelon if that node holds that material
+        if mat in get_prop(x.network, ech, :node_materials) #only add to echelon if that node holds that material
             ech_grp[(node = ech, material = mat)].level[1] += ipos
         end
     end
