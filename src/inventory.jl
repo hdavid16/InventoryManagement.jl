@@ -79,28 +79,6 @@ function update_inventories!(x::SupplyChainEnv)
 end
 
 """
-    calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, due_by::Real = Inf)
-
-Calculate backlogged orders with relative due date of `due_by` on a list of `arcs` for a material `mat`.
-"""
-function calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, due_by::Real = Inf)
-    #get backlog from open orders
-    arcs_set = Set(arcs)
-    due_orders = filter(
-        [:material, :arc, :due] => 
-            (m,a,d) -> 
-                m == mat && 
-                a in arcs_set &&
-                d <= due_by, 
-        x.open_orders,
-        view=true
-    )
-    backlog = sum(due_orders.quantity; init = 0)
-    
-    return backlog
-end
-
-"""
     calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
 
 Calculate backlogged orders using pre-filtered grouped dataframe.

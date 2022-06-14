@@ -87,7 +87,7 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String
     s, p = 0, 0 #sales and penalties
     sales_price = get_prop(x.network, n, :sales_price)[mat]
     dmnd_penalty = get_prop(x.network, n, :unfulfilled_penalty)[mat]
-    key = (arc = (n,n), material = mat)
+    key = (arc = (n,:market), material = mat)
     if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp)
         sold, unfilled = sales_grp[key][1, [:fulfilled, :unfulfilled]]
         s += sales_price * sold
