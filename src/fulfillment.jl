@@ -8,7 +8,7 @@ Fulfill request from on-hand inventory.
 """
 function fulfill_from_stock!(
     x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
-    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
+    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}, orders_grp::GroupedDataFrame
 )
     #available supply
     supply = supply_grp[(node = src, material = mat)].level[1]
@@ -19,7 +19,7 @@ function fulfill_from_stock!(
     partial_fulfillment = get_prop(x.network, indicator_node, param_key)[mat]
     
     #loop through orders on relevant arc
-    orders_df = relevant_orders(x, src, dst, mat)
+    orders_df = relevant_orders(x, src, dst, mat, orders_grp)
     for row in eachrow(orders_df)
         order_amount = row.quantity
         if partial_fulfillment
@@ -52,7 +52,7 @@ Fulfill request by scheduling material production.
 """
 function fulfill_from_production!(
     x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
-    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame, capacities::Dict
+    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame, orders_grp::GroupedDataFrame, capacities::Dict
 )
     #extract info
     bom = get_prop(x.network, src, :bill_of_materials)
@@ -60,7 +60,7 @@ function fulfill_from_production!(
     cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
 
     #get relevant orders on that arc & raw material orders (:production)
-    orders_df = relevant_orders(x, src, dst, mat)
+    orders_df = relevant_orders(x, src, dst, mat, orders_grp)
     raw_orders_df = filter(
         [:id, :material] => 
             (id,m) -> 

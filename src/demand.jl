@@ -54,9 +54,9 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
                 create_order!(x, a..., mat, amount, serv)
             end
             if sup == req
-                fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities)
+                fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, orders_grp, capacities)
             else
-                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
+                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp, orders_grp)
             end
         end
     end
@@ -115,36 +115,46 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
 end
 
 """
-    relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat`
 """
-function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
     #node from which to check early_fulfillment param value
     indicator_node = dst == :market ? src : dst
     param_key = dst == :market ? :market_early_fulfillment : :early_fulfillment
     early_fulfillment = get_prop(x.network, indicator_node, param_key)[mat]
-    #loop through orders on relevant arc
-    if early_fulfillment
-        orders_df = filter(
-            [:arc, :material] => 
-                (a,m) -> 
-                    a == (src,dst) && #nodes with the arc
-                    m == mat, #orders for the same material
-            x.open_orders, 
-            view = true
-        )
-    else #only attempt to fulfill orders that have expired their service lead time
-        orders_df = filter(
-            [:arc, :material, :due] => 
-                (a,m,t) -> 
-                    a == (src,dst) && #nodes with the arc
-                    m == mat &&  #orders for the same material
-                    t <= 0, #expired orders
-            x.open_orders, 
-            view = true
-        )
+    #get relevant orders
+    last_id = maximum(combine(orders_grp, names(orders_grp)).id; init=1) #last order from previous period or before simulate markets was called (init = 1 used in first simulation period)
+    orders_df = x.open_orders[last_id+1:end,:] #new orders created since last order id (NOTE: assume they belong to the relevant arc)
+    #append old open orders if they exist
+    if (arc = (src,dst), material = mat) in keys(orders_grp)
+        append!(orders_df, orders_grp[(arc = (src,dst), material = mat)]) 
     end
+    if !early_fulfillment
+        filter!(:due => t -> t <= 0, orders_df)
+    end
+    # #loop through orders on relevant arc
+    # if early_fulfillment
+    #     orders_df = filter(
+    #         [:arc, :material] => 
+    #             (a,m) -> 
+    #                 a == (src,dst) && #nodes with the arc
+    #                 m == mat, #orders for the same material
+    #         x.open_orders, 
+    #         view = true
+    #     )
+    # else #only attempt to fulfill orders that have expired their service lead time
+    #     orders_df = filter(
+    #         [:arc, :material, :due] => 
+    #             (a,m,t) -> 
+    #                 a == (src,dst) && #nodes with the arc
+    #                 m == mat &&  #orders for the same material
+    #                 t <= 0, #expired orders
+    #         x.open_orders, 
+    #         view = true
+    #     )
+    # end
 
     return orders_df
 end
@@ -185,6 +195,8 @@ Open markets, apply material demands, and update inventory positions.
 function simulate_markets!(x::SupplyChainEnv)
     supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
     supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
+    orders_df = filter(:arc => a -> a[2] == :market, x.open_orders) #filter any existing market orders
+    orders_grp = groupby(orders_df, [:arc, :material]) #save a grouped copy of open orders
 
     for n in x.markets
         dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
@@ -203,7 +215,7 @@ function simulate_markets!(x::SupplyChainEnv)
                 end
             end
             #fulfill orders from stock (will include any backlogged orders)
-            fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
+            fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing, orders_grp) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
         end
     end
 end
