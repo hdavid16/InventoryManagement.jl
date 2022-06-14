@@ -204,5 +204,5 @@ function simulate_policy!(env::SupplyChainEnv, args...; kwargs...)
         (env)(action)
     end
 
-    calculate_service_measures!(env)
+    # calculate_service_measures!(env)
 end

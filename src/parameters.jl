@@ -72,7 +72,7 @@ function check_inputs!(
             end
         end
     end
-
+    store_node_materials!(network) #store materials allowed in each node
     print_warnings(truncate_flag, roundoff_flag, replace_flag)
 end
 
@@ -261,4 +261,22 @@ function update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Uni
     print_warnings(truncate_flag, roundoff_flag, replace_flag) #print any warnings
 
     return param_dict
+end
+
+"""
+    store_node_materials!(network::MetaDiGraph)
+
+Record which materials have non-zero capacity at each node (can be stored at that node).
+
+This improves performance for simulations with many materials.
+"""
+function store_node_materials!(network::MetaDiGraph)
+    materials = get_prop(network, :materials)
+    for n in vertices(network)
+        n_cap = filter( #get nonzero inventory capacities
+            i -> !iszero(i[2]),    
+            get_prop(network, n, :inventory_capacity)
+        )
+        set_prop!(network, n, :node_materials, collect(keys(n_cap)) ∩ materials)
+    end
 end

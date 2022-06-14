@@ -31,7 +31,8 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     #place requests
     for req in request_nodes #loop by nodes placing requests (in reverse topological order)
         sup_priority = get_prop(x.network, req, :supplier_priority) #get supplier priority list
-        for mat in mats, sup in sup_priority[mat] #loop by material and supplier priority
+        req_mats = get_prop(x.network, req, :node_materials) #get materials that are compatible with requester node
+        for mat in req_mats, sup in sup_priority[mat] #loop by material and supplier priority
             a = (sup, req) #arc
             lead = float(leads[Edge(a...), mat]) #sampled lead time
             serv = float(servs[Edge(a...), mat]) #sampled service lead time
@@ -39,20 +40,21 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             #continue to next iteration if no request made and no backlog
             if iszero(amount)
                 #calculate outstanding orders (backlog) to determine if an order should be placed even if amount = 0 (will be 0 if assuming lost sales)
-                backlog = calculate_backlog(x, a..., mat)
-                if req in x.markets
-                    backlog += calculate_backlog(x, req, [:market], mat)
-                end
-                if req in x.producers
-                    backlog += calculate_backlog(x, req, [:production], mat)
-                end
+                arcs_list = [a,(req,:production)]
+                backlog = calculate_backlog(x, arcs_list, mat) #include any outstanding raw material conversion orders (:production)
+                # if req in x.markets
+                #     backlog += calculate_backlog(x, req, [:market], mat)
+                # end
+                # if req in x.producers
+                #     backlog += calculate_backlog(x, req, [:production], mat)
+                # end
                 if iszero(backlog)
                     # push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
                     continue 
                 end
+            else #create order and save service lead time
+                create_order!(x, a..., mat, amount, serv)
             end
-            #create order and save service lead time
-            create_order!(x, a..., mat, amount, serv)
             if sup == req
                 fulfill_from_production!(x, a..., mat, lead, capacities)
             else
@@ -88,7 +90,7 @@ Abort order placement.
 """
 function exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
     for a in arcs, mat in x.materials
-        backlog = calculate_backlog(x, a..., mat)
+        backlog = x.demand[a,mat][x.period-1,:unfulfilled]#calculate_backlog(x, a..., mat)
         x.demand[a,mat][x.period,:unfulfilled] += backlog
         # push!(x.demand, [x.period, a, mat, 0, 0, 0, backlog, missing])
     end

@@ -11,8 +11,8 @@ function fulfill_from_stock!(
     lead::Float64#, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
 )
     #available supply
-    supply = @view x.inventory_on_hand[src,mat][:,:level]#supply_grp[(node = src, material = mat)].level[1]
-    supply_t = supply[x.period+1]
+    #supply_grp[(node = src, material = mat)].level[1]
+    supply_t = x.inventory_on_hand[src,mat][x.period+1,:level]
 
     #check if partial fulfillment is allowed
     indicator_node = dst == :market ? src : dst
@@ -36,7 +36,7 @@ function fulfill_from_stock!(
             x.demand[(src,dst),mat][x.period,:lead] = lead #log lead time
             # x.demand[(src,dst),mat][x.period,[:quantity, :fulfilled, :lead]] = [order_amount, accepted_inv, lead] #log demand
             # push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
-            supply[x.period+1] -= accepted_inv #remove inventory from site
+            x.inventory_on_hand[src,mat][x.period+1,:level] -= accepted_inv #remove inventory from site
             dst != :market && make_shipment!(x, src, dst, mat, accepted_inv, lead) #ship material (unless it is external demand)
         end
         if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate

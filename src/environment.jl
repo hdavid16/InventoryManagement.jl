@@ -217,7 +217,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
             )
         )
 
-        for n in nodes, m in mats if get_prop(net, n, :inventory_capacity)[m] > 0
+        for n in nodes, m in mats if m in get_prop(net, n, :node_materials)
     )
     # echelon_stock = DataFrame(
     #     period = Int[], 
