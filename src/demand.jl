@@ -5,6 +5,7 @@ Place inventory replenishment requests throughout the network.
 """
 function place_orders!(x::SupplyChainEnv, act::NamedArray)
     arcs = names(act,2) #arcs
+
     #exit if no action and there is no backlog
     if !x.options[:backlog] && iszero(act)
         exit_place_orders!(x, arcs)
@@ -27,6 +28,8 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     #get pipeline inventory
     pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
+    #get existing open orders
+    orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
     #place requests
     for req in request_nodes #loop by nodes placing requests (in reverse topological order)
@@ -41,7 +44,7 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             if iszero(amount)
                 #calculate outstanding orders (backlog) to determine if an order should be placed even if amount = 0 (will be 0 if assuming lost sales)
                 arcs_list = [a,(req,:production)]
-                backlog = calculate_backlog(x, arcs_list, mat) #include any outstanding raw material conversion orders (:production)
+                backlog = calculate_backlog(x, arcs_list, mat, orders_grp) #include any outstanding raw material conversion orders (:production)
                 if iszero(backlog)
                     push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
                     continue 
@@ -75,15 +78,18 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
 end
 
 """
-    exit_place_orders!(x, arcs)
+    exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
 
 Abort order placement.
 """
 function exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
+    due_by = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
+    orders_df = filter(:due => j -> j <= due_by, x.open_orders, view=true) #orders to count in backlogging
+    orders_grp = groupby(orders_df, [:arc, :material]) #group by arc and material
     for a in arcs
         dst_mats = get_prop(x.network, a[2], :node_materials)
         for mat in dst_mats
-            backlog = calculate_backlog(x, [a], mat)
+            backlog = calculate_backlog(x, [a], mat, orders_grp)
             push!(x.demand, [x.period, a, mat, 0, 0, 0, backlog, missing])
         end
     end
@@ -177,6 +183,9 @@ end
 Open markets, apply material demands, and update inventory positions.
 """
 function simulate_markets!(x::SupplyChainEnv)
+    supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
+    supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
+
     for n in x.markets
         dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
         dmnd_dist_dict = get_prop(x.network, n, :demand_distribution)

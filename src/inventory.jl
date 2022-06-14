@@ -56,7 +56,10 @@ function update_inventories!(x::SupplyChainEnv)
     on_hand_df = filter(:period => j -> j == x.period, x.inventory_on_hand, view=true) #on_hand inventory at node
     onhand_grp = groupby(on_hand_df, [:node, :material]) #group by node and material
     pipeline_df = filter(:period => j -> j == x.period, x.inventory_pipeline, view=true) #pipeline inventories
-    pipeline_grp = groupby(pipeline_df, :material) #group by material
+    pipeline_grp = groupby(pipeline_df, [:arc, :material]) #group by arc and material
+    due_by = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
+    orders_df = filter(:due => j -> j <= due_by, x.open_orders, view=true) #orders to count in backlogging
+    orders_grp = groupby(orders_df, [:arc, :material]) #group by arc and material
 
     #initialize echelon inventory positions
     initialize_echelons!(x)
@@ -66,7 +69,7 @@ function update_inventories!(x::SupplyChainEnv)
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network)
         for mat in get_prop(x.network, n, :node_materials) #loop through materials that can be stored at that node #x.materials
-            ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp)
+            ilevel, ipos = inventory_components(x, n, mat, pipeline_grp, onhand_grp, orders_grp)
             push!(x.inventory_level, [x.period, n, mat, ilevel]) #update inventory level
             push!(x.inventory_position, [x.period, n, mat, ipos]) #update inventory position
             update_echelons!(x, n, mat, ipos, ech_grp) #update echelon stocks
@@ -98,31 +101,55 @@ function calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,St
 end
 
 """
+    calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
+
+Calculate backlogged orders using pre-filtered grouped dataframe.
+"""
+calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame) =
+    sum(
+        sum(orders_grp[(arc = a, material = mat)].quantity; init=0) 
+        for a in arcs if (arc = a, material = mat) in keys(orders_grp); 
+        init = 0
+    )
+
+"""
+    calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, pipeline_grp::GroupedDataFrame)
+
+Calculate in-transit inventory of material `mat` to node `n`.
+"""
+calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, pipeline_grp::GroupedDataFrame) = 
+    sum(
+        sum(pipeline_grp[(arc = (src,n), material = mat)].level; init=0) 
+        for src in inneighbors(x.network, n) if (arc = (src,n), material = mat) in keys(pipeline_grp); 
+        init=0
+    )
+
+"""
     inventory_components(
         x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
         pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
+        orders_grp::GroupedDataFrame
     )
 
 Extract components to determine inventory level and position.
 """
 function inventory_components(
     x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
-    pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, 
+    pipeline_grp::GroupedDataFrame, onhand_grp::GroupedDataFrame, orders_grp::GroupedDataFrame
 )
-    pipeline = sum(filter(:arc => j -> j[end] == n, pipeline_grp[(material = mat,)], view=true).level) #in-transit inventory
+    pipeline = calculate_in_transit(x,n,mat,pipeline_grp) #in-transit inventory to node n
     onhand = onhand_grp[(node = n, material = mat)].level[1] #on_hand inventory
     backorder = 0 #initialize replenishment orders placed to suppliers that are backlogged
     backlog = 0 #initialize backlog for orders placed by successors
     if x.options[:backlog]
-        backlog_window = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
         arcs_out = vcat( #nodes accounted for in backlog
             (n,:production), #raw material conversion
             (n,:market), #market sales
             [(n,succ) for succ in outneighbors(x.network,n) if n != succ] #downstream replenishments
         )
-        backlog = calculate_backlog(x,arcs_out,mat,backlog_window) 
+        backlog = calculate_backlog(x,arcs_out,mat,orders_grp) 
         arcs_in = [(pred,n) for pred in inneighbors(x.network, n)] #backorder includes previous replenishment orders placed to upstream nodes
-        backorder = calculate_backlog(x,arcs_in,mat,backlog_window) 
+        backorder = calculate_backlog(x,arcs_in,mat,orders_grp) 
     end
     ilevel = onhand - backlog #inventory level
     iorder = pipeline + backorder #inventory on order
