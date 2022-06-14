@@ -7,7 +7,7 @@ If there is more than 1 supplier and reallocation of requests occurs, the metric
 """
 function calculate_service_measures!(env::SupplyChainEnv)
     #join demand tables
-    demand = vcat([insertcols!(df, :arc => a, :material => m) for ((a,m),df) in env.demand]...)
+    demand = vcat([insertcols!(df, :arc => a, :material => m) for ((a,m),df) in deepcopy(env.demand)]...)
     #filter out times with no demand
     filter!(i -> i.quantity > 0, demand) 
     #generate a column with the supplier for each order

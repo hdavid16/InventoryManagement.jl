@@ -242,7 +242,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
             fulfilled = zeros(num_periods),
             lead = zeros(num_periods),
             unfulfilled = zeros(num_periods),
-            reallocated = Any[missing for _ in 1:num_periods]
+            # reallocated = Any[missing for _ in 1:num_periods]
         )
 
         for a in all_arcs, m in mats

@@ -31,7 +31,10 @@ function fulfill_from_stock!(
         if accepted_inv > 0
             row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
             push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_inv)) #update fulfilled column in order history (date, supplier, amount fulfilled)
-            x.demand[(src,dst),mat][x.period,[:quantity, :fulfilled, :lead]] = [order_amount, accepted_inv, lead] #log demand
+            x.demand[(src,dst),mat][x.period,:quantity] += order_amount #log demand quantity
+            x.demand[(src,dst),mat][x.period,:fulfilled] += accepted_inv #log fulfilled demand
+            x.demand[(src,dst),mat][x.period,:lead] = lead #log lead time
+            # x.demand[(src,dst),mat][x.period,[:quantity, :fulfilled, :lead]] = [order_amount, accepted_inv, lead] #log demand
             # push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
             supply[x.period+1] -= accepted_inv #remove inventory from site
             dst != :market && make_shipment!(x, src, dst, mat, accepted_inv, lead) #ship material (unless it is external demand)
@@ -95,14 +98,19 @@ function fulfill_from_production!(
             for cmat in cmat_names
                 coproduction = accepted_prod*bom[cmat,mat]
                 capacities[src][cmat] -= coproduction #update coproduct production capacity
-                x.demand[(src,dst),cmat][x.period,[:fulfilled, :lead]] = [coproduction, lead] #log co-production
+                x.demand[(src,dst),cmat][x.period,:fulfilled] += coproduction #log co-production amount
+                x.demand[(src,dst),cmat][x.period,:lead] = lead #log co-production lead time
+                # x.demand[(src,dst),cmat][x.period,[:fulfilled, :lead]] = [coproduction, lead] #log co-production
                 # push!(x.demand, [x.period, (src,dst), cmat, 0, coproduction, lead, 0, missing]) #log demand
                 make_shipment!(x, src, dst, cmat, coproduction, lead) #schedule shipment of co-product (original order amount is 0 since this is a coproduct)
             end
             #schedule production
             capacities[src][mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
             push!(x.orders[row.id,:fulfilled], (time=x.period, supplier=src, amount=accepted_prod)) #update fulfilled column in order history (date, supplier, and amount fulfilled)
-            x.demand[(src,dst),mat][x.period,[:quantity, :fulfilled, :lead]] = [order_amount, accepted_prod, lead] #log demand
+            x.demand[(src,dst),mat][x.period,:quantity] += order_amount #log demand quantity
+            x.demand[(src,dst),mat][x.period,:fulfilled] += accepted_prod #log fulfilled demand
+            x.demand[(src,dst),mat][x.period,:lead] = lead #log lead time
+            # x.demand[(src,dst),mat][x.period,[:quantity, :fulfilled, :lead]] = [order_amount, accepted_prod, lead] #log demand
             # push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_prod, lead, 0, missing]) #log demand
             make_shipment!(x, src, dst, mat, accepted_prod, lead) 
         end

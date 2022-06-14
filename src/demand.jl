@@ -58,10 +58,10 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             else
                 fulfill_from_stock!(x, a..., mat, lead)
             end
-            #check for any backlogged market demand orders
-            if x.options[:backlog] && req in x.markets 
-                fulfill_from_stock!(x, req, :market, mat, 0.)
-            end
+            # #check for any backlogged market demand orders
+            # if x.options[:backlog] && req in x.markets 
+            #     fulfill_from_stock!(x, req, :market, mat, 0.)
+            # end
         end
     end
 
@@ -89,7 +89,7 @@ Abort order placement.
 function exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
     for a in arcs, mat in x.materials
         backlog = calculate_backlog(x, a..., mat)
-        x.demand[a,mat][x.period,:unfulfilled] = backlog
+        x.demand[a,mat][x.period,:unfulfilled] += backlog
         # push!(x.demand, [x.period, a, mat, 0, 0, 0, backlog, missing])
     end
 end
@@ -168,11 +168,17 @@ function log_unfulfilled_demand!(x::SupplyChainEnv, order_row::DataFrameRow, acc
         end
     end
     if accepted > 0 #order was partially fulfilled
-        x.demand[end,:unfulfilled] = order_row.quantity
-        x.demand[end,:reallocated] = new_alloc
+        x.demand[(sup,req),mat][x.period,:unfulfilled] += order_row.quantity
+        # x.demand[(sup,req),mat][x.period,:reallocated] = new_alloc
+        # x.demand[(sup,req),mat][x.period,[:unfulfilled,:reallocated]] = [order_row.quantity, new_alloc]
+        # x.demand[end,:unfulfilled] = order_row.quantity
+        # x.demand[end,:reallocated] = new_alloc
     else #order was not fulfilled
         original_amount = order_row.quantity
-        x.demand[(sup,req),mat][x.period,[:quantity,:unfulfilled,:reallocated]] = [original_amount, original_amount, new_alloc]
+        x.demand[(sup,req),mat][x.period,:quantity] += original_amount
+        x.demand[(sup,req),mat][x.period,:unfulfilled] += original_amount
+        # x.demand[(sup,req),mat][x.period,:reallocated] = new_alloc
+        # x.demand[(sup,req),mat][x.period,[:quantity,:unfulfilled,:reallocated]] = [original_amount, original_amount, new_alloc]
         # push!(x.demand, [x.period, (sup,req), mat, original_amount, 0, 0, original_amount, new_alloc])
     end
 end
@@ -196,21 +202,24 @@ function simulate_markets!(x::SupplyChainEnv)
                 q = rand(dmnd) #sample demand
                 slt = rand(serv_lt) #sample service lead time
                 if q > 0
-                    external_order!(x,n,mat,q,slt)
+                    create_order!(x, n, :market, mat, q, slt)
+                    # external_order!(x,n,mat,q,slt)
                 end
             end
+            #fulfill orders from stock (will include any backlogged orders)
+            fulfill_from_stock!(x, n, :market, mat, 0.) #0 lead time since at market
         end
     end
 end
 
-"""
-    external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
+# """
+#     external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
 
-Create external demand at node `n` for material `mat` for quantity `q` with service lead time `serv`.
-"""
-function external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
-    # supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
-    # supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
-    create_order!(x, n, :market, mat, q, serv)
-    fulfill_from_stock!(x, n, :market, mat, 0.) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
-end
+# Create external demand at node `n` for material `mat` for quantity `q` with service lead time `serv`.
+# """
+# function external_order!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, q::Real, serv::Real)
+#     # supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
+#     # supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
+#     create_order!(x, n, :market, mat, q, serv)
+#     fulfill_from_stock!(x, n, :market, mat, 0.) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
+# end
