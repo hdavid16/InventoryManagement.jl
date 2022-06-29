@@ -3,6 +3,7 @@
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0,
+                        order_multiples::Union{Real, Dict} = 1,
                         centralized::Bool = false)
 
 Apply an inventory policy to specify the replinishment orders for each material
@@ -15,6 +16,7 @@ Apply an inventory policy to specify the replinishment orders for each material
 - `policy_type`: `:rQ` for an `(r,Q)` policy, or `:sS` for an `(s,S)` policy. If passing a `Dict`, the policy type should be specified for each node (keys).
 - `review_period`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
 - `min_order_qty`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
+- `order_multiples`: size increments for each order (default is -1, which means no constraint on order sizes). If a `Dict` is passed, the order multiples should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of -1 (no order multiples enforced).
 - `centralized`: should the system be assumed to be centralized (default: `false`)? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this.
 """
 function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::Dict;
@@ -22,6 +24,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0,
+                        order_multiples::Union{Real, Dict} = -1,
                         centralized::Bool = false)
 
     #check review period; if not in review period, send null action
@@ -38,7 +41,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     mats = env.materials
 
     #check inputs
-    check_policy_inputs!(reorder_point, policy_param, review_period, min_order_qty, mats, request_nodes, supply_nodes)
+    check_policy_inputs!(reorder_point, policy_param, review_period, min_order_qty, order_multiples, mats, request_nodes, supply_nodes)
 
     #filter data for policy
     state1_df = filter(:period => j -> j == env.period, env.inventory_position, view=true) #inventory position
@@ -66,7 +69,8 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
         if state <= reorder_point[n,mat]
             supplier = get_prop(env.network, n, :supplier_priority)[mat][1] #get first priority supplier
             MOQ = min_order_qty isa Real ? min_order_qty : min_order_qty[(supplier,mat)] #minimum order quantity
-            action[mat, (supplier,n)] = calculate_reorder(n, mat, state, MOQ, policy_type, policy_param)
+            OM = order_multiples isa Real ? order_multiples : order_multiples[(supplier,mat)] #order size
+            action[mat, (supplier,n)] = calculate_reorder(n, mat, state, MOQ, OM, policy_type, policy_param)
         end
     end
 
@@ -91,14 +95,15 @@ end
 """
     check_policy_inputs!(
         reorder_point::Dict, policy_param::Dict, review_period::Union{Int, AbstractRange, Vector, Dict}, 
-        min_order_qty::Union{Real, Dict}, mats::Vector, request_nodes::Vector, supply_nodes::Vector
+        min_order_qty::Union{Real, Dict}, order_multiples::Union{Real, Dict}, mats::Vector, request_nodes::Vector, supply_nodes::Vector
     )
 
 Validate inputs to inventory policy.
 """
 function check_policy_inputs!(
     reorder_point::Dict, policy_param::Dict, review_period::Union{Int, AbstractRange, Vector, Dict}, 
-    min_order_qty::Union{Real, Dict}, mats::Vector, request_nodes::Vector, supply_nodes::Vector
+    min_order_qty::Union{Real, Dict}, order_multiples::Union{Real, Dict}, 
+    mats::Vector, request_nodes::Vector, supply_nodes::Vector
 )
     #check inputs
     for mat in mats
@@ -115,6 +120,9 @@ function check_policy_inputs!(
         for n in supply_nodes
             if min_order_qty isa Dict && !in((n,mat), keys(min_order_qty))
                 min_order_qty[(n,mat)] = 0 #set to default value of 0
+            end
+            if order_multiples isa Dict && !in((n,mat), keys(order_multiples))
+                order_multiples[(n,mat)] = -1 #set to default value of 0
             end
         end
     end
@@ -170,22 +178,35 @@ end
 
 """
     calculate_reorder(
-        n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, 
+        n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, OM::Real,
         policy_type::Union{Dict, Symbol}, policy_param::Dict
     )
 
 Calculate reorder quantity for material `mat` at node `n`.
 """
 function calculate_reorder(
-    n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, 
+    n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, OM::Real,
     policy_type::Union{Dict, Symbol}, policy_param::Dict
 )
     pol_type = policy_type isa Dict ? policy_type[n] : policy_type #policy type
     @assert pol_type in [:rQ, :sS] "The policy type must be either `:rQ` or `:sS`."
+
+    #get order size
     if pol_type == :rQ #rQ policy
-        reorder = max(policy_param[n,mat], MOQ)
+        Q = policy_param[n,mat] #order size
     elseif pol_type == :sS #sS policy
-        reorder = state < policy_param[n,mat] ? max(policy_param[n,mat] - state, MOQ) : 0
+        Q = max(policy_param[n,mat] - state, 0) #order size (only order if state is below S)
+    end
+
+    #apply MOQ and OM constraints (only if order is positive)
+    if Q > 0 
+        if OM < 0 #no constraint on order multiples
+            reorder = max(Q, MOQ)
+        else #apply order size constraint
+            reorder = MOQ + OM*ceil((Q-MOQ)/OM) 
+        end
+    else
+        reorder = 0
     end
     
     return reorder
