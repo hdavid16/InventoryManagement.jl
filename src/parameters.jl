@@ -20,11 +20,12 @@ end
 Identify all `network` successors to node `n`.
 """
 function identify_echelons(network::MetaDiGraph, n::Int)
+    net = remove_self_loops(network)
     #find all successors to node n
-    sink_nodes = [i for i in vertices(network) if isempty(outneighbors(network, i))]
+    sink_nodes = [i for i in vertices(net) if isempty(outneighbors(net, i))]
     echelon_nodes = [] #initialize list of echelon nodes
     for sink in sink_nodes #find all nodes between n and each sink node
-        echelon = yen_k_shortest_paths(network, n, sink, weights(network), typemax(Int)).paths
+        echelon = yen_k_shortest_paths(net, n, sink, weights(net), typemax(Int)).paths
         union!(echelon_nodes, echelon...) #remove duplicates
     end
 
