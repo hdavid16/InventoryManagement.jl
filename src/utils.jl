@@ -64,9 +64,15 @@ end
 
 Break self-loops and perform topological sort.
 """
-function topological_sort(net::MetaDiGraph)
+topological_sort(net::MetaDiGraph) = topological_sort_by_dfs(remove_self_loops(net))
+
+"""
+    remove_self_loops(net::MetaDiGraph)
+
+Create a copy of `net` with no self-loops.
+"""
+function remove_self_loops(net::MetaDiGraph)
     A = adjacency_matrix(net) #get adjacency_matrix
     A[diagind(A)] .= 0 #remove diagonal (self-loops)
-    g = SimpleDiGraph(A) #create new graph without self-loops
-    return topological_sort_by_dfs(g) 
+    return SimpleDiGraph(A) #create new graph without self-loops
 end
