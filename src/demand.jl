@@ -6,7 +6,7 @@ Place inventory replenishment requests throughout the network.
 function place_orders!(x::SupplyChainEnv, act::NamedArray)
     arcs = names(act,2) #arcs
 
-    #exit if no action and there is no backlog
+    #exit if no action and there is no backlogging
     if !x.options[:backlog] && iszero(act)
         exit_place_orders!(x, arcs)
         return
@@ -63,17 +63,28 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
 
     #lost sales for expired orders (if backlog = false, or guaranteed service = true)
     if !x.options[:backlog] || x.options[:guaranteed_service] #any open orders with non-positive relative due date (0 service lead time) become lost sales
-        expired_orders = filter(:due => t -> t <= 0, x.open_orders, view=true).id
-        transform!(
-            filter(:id => id -> id in expired_orders, x.orders, view=true),
-            [:arc, :fulfilled] => ByRow((a,log) -> vcat(log, (time=x.period, supplier=a[1], amount=:lost_sale))) => :fulfilled
-        )
-        filter!(:due => t -> t > 0, x.open_orders)
+        lost_sales!(x)
     end
 
     #updated production capacities (after commited production)
     for n in x.producers
         set_prop!(x.network, n, :production_capacity, capacities[n])
+    end
+end
+
+"""
+    lost_sales!(x::SupplyChainEnv)
+
+Delete expired orders (lost sales).
+"""
+function lost_sales!(x::SupplyChainEnv)
+    expired_orders = filter(:due => t -> t <= 0, x.open_orders, view=true).id
+    if !isempty(expired_orders)
+        transform!(
+            filter(:id => id -> id in expired_orders, x.orders, view=true),
+            [:arc, :fulfilled] => ByRow((a,log) -> vcat(log, (time=x.period, supplier=a[1], amount=:lost_sale))) => :fulfilled
+        )
+        filter!(:due => t -> t > 0, x.open_orders)
     end
 end
 
@@ -100,14 +111,15 @@ end
 
 Create and log order.
 """
-function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
+function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Real)
     x.num_orders += 1 #create new order ID
-    push!(x.orders, [x.num_orders, x.period, (sup,req), mat, amount, []]) #update order history
+    push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount, []]) #update order history
     push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_lead_time]) #add order to temp order df
     if sup == req && isproduced(x, sup, mat)
         bom = get_prop(x.network, sup, :bill_of_materials)
         rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names
+            # push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:production), rmat, -amount*bom[rmat,mat], []])
             push!(x.open_orders, [x.num_orders, (sup,:production), rmat, -amount*bom[rmat,mat], service_lead_time])
         end
     end
@@ -205,5 +217,10 @@ function simulate_markets!(x::SupplyChainEnv)
             #fulfill orders from stock (will include any backlogged orders)
             fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
         end
+    end
+
+    #lost sales for expired orders (if backlog = false, or guaranteed service = true)
+    if !x.options[:backlog] || x.options[:guaranteed_service] #any open orders with non-positive relative due date (0 service lead time) become lost sales
+        lost_sales!(x)
     end
 end
