@@ -131,38 +131,14 @@ end
 
 Reset a `SupplyChainEnv` (empty all logging dataframes and set simulation time to 0).
 """
-function reset!(env::SupplyChainEnv)
-    env.period = 0
-    env.reward = 0
-    filter!(i -> i.period == 0, env.inventory_on_hand)
-    filter!(i -> i.period == 0, env.inventory_pipeline)
-    filter!(i -> i.period == 0, env.inventory_position)
-    filter!(i -> i.period == 0, env.echelon_stock)
-    filter!(i -> i.period == 0, env.demand)
-    filter!(i -> i.period == 0, env.profit)
-    env.shipments = DataFrame(
-        arc = [],
-        material = [],
-        amount = Float64[],
-        lead = Int[]
+reset!(env::SupplyChainEnv) = 
+    SupplyChainEnv(
+        env.network, env.num_periods;
+        backlog = env.options[:backlog], reallocate = env.options[:reallocate], 
+        guaranteed_service = env.options[:guaranteed_service], adjusted_stock = env.options[:adjusted_stock],
+        capacitated_inventory = env.options[:capacitated_inventory],
+        evaluate_profit = env.options[:evaluate_profit], discount = env.discount, seed = env.seed
     )
-    env.open_orders = DataFrame(
-        created = Int[],
-        arc = Tuple[],
-        material = [],
-        quantity = [],
-        due = []
-    )
-    env.orders = DataFrame(
-        created = Int[],
-        arc = Tuple[],
-        material = [],
-        quantity = [],
-        fulfilled = []
-    )
-
-    Random.seed!(env)
-end
 
 """
     is_terminated(env::SupplyChainEnv)
@@ -246,6 +222,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     orders = DataFrame(
         id = Int[],
         created = Int[],
+        due = Int[],
         arc = Tuple[],
         material = [],
         quantity = [],
