@@ -59,7 +59,7 @@ function check_inputs!(
             for mat in mats
                 #set defaults
                 if !in(mat, keys(param_dict)) #if material not specified, add it to the dict and set default values
-                    param_dict = set_default!(network, key, obj, mat, num_periods)
+                    param_dict = set_default!(network, key, obj, mat)
                 end
                 #check parameter value is valid
                 param = param_dict[mat]
@@ -169,18 +169,18 @@ function check_bill_of_materials!(network::MetaDiGraph, n::Int)
 end
 
 """
-    set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, num_periods::Int)
+    set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
 
 Set parameter defaults.
 """
-function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, num_periods::Int)
+function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
     param_dict = get_prop(network, obj..., key)
     if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
         set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
     elseif key == :demand_frequency #demand at every period
         merge!(param_dict, Dict(mat => 1))
     elseif key == :supplier_priority #random ordering of supplier priority
-        merge!(param_dict, Dict(mat => inneighbors(network, obj)))
+        merge!(param_dict, Dict(mat => inneighbors(network, obj) |> pred -> obj in pred ? [obj] ∪ pred : pred))
     elseif key == :partial_fulfillment #allow partial fulfillment by default
         merge!(param_dict, Dict(mat => true))
     elseif key == :market_partial_fulfillment #allow partial fulfillment by default
