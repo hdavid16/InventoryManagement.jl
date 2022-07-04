@@ -17,6 +17,7 @@ abstract type AbstractEnv end
 - `demand::DataFrame`: Timeseries with replenishment orders and market demand placed on each arc.
 - `orders::DataFrame`: History of all orders received.
 - `open_orders::DataFrame`: Temporary table with outstanding orders.
+- `fulfillments::DataFrame`: Fulfilment log for system orders.
 - `shipments::DataFrame`: Temporary table with active shipments and time to arrival on each arc.
 - `profit::DataFrame`: Timeseries with profit @ each node.
 - `metrics::DataFrame`: Service metrics (service level and fill rate) for each supplier and material.
@@ -48,6 +49,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     demand::DataFrame
     orders::DataFrame
     open_orders::DataFrame
+    fulfillments::DataFrame
     shipments::DataFrame
     profit::DataFrame
     metrics::DataFrame
@@ -209,6 +211,16 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         reallocated = Any[]
     )
 
+    #all system orders
+    orders = DataFrame(
+        id = Int[],
+        created = Int[],
+        due = Int[],
+        arc = Tuple[],
+        material = [],
+        quantity = []
+    )
+
     #outstanding orders
     open_orders = DataFrame(
         id = Int[],
@@ -218,15 +230,12 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         due = []
     )
 
-    #all system orders
-    orders = DataFrame(
+    #order fulfillments
+    fulfillments = DataFrame(
         id = Int[],
-        created = Int[],
-        due = Int[],
-        arc = Tuple[],
-        material = [],
-        quantity = [],
-        fulfilled = []
+        time = [],
+        supplier = [],
+        amount = []
     )
 
     #material shipments
@@ -247,5 +256,5 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     #metrics
     metrics = DataFrame()
 
-    return inventory_on_hand, inventory_level, inventory_pipeline, inventory_position, echelon_stock, demand, orders, open_orders, shipments, profit, metrics
+    return inventory_on_hand, inventory_level, inventory_pipeline, inventory_position, echelon_stock, demand, orders, open_orders, fulfillments, shipments, profit, metrics
 end
