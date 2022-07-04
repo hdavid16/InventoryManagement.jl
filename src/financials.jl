@@ -3,6 +3,8 @@
 
 Calculate profit at each node in the network
     (sales - production cost - purchase costs - transportation costs - holding costs).
+
+[Bug] NOTE: 0 lead time arrivals are not included in `arrivals` (These are updated when the shipment is created)
 """
 function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     #filter data
