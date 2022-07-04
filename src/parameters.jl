@@ -74,7 +74,7 @@ function check_inputs!(
         end
     end
 
-    store_node_materials!(network) #store materials allowed in each node
+    store_node_materials!(network, plants) #store materials allowed in each node
     
     print_warnings(truncate_flag, roundoff_flag, replace_flag)
 end
@@ -145,12 +145,13 @@ Validate bill of material input at a node.
 """
 function check_bill_of_materials!(network::MetaDiGraph, n::Int)
     param = get_prop(network, n, :bill_of_materials)
-    #create a NamedArray from a BOM Dictionary
-    if param isa Dict
+    #create a sparse NamedArray from a BOM Dictionary
+    if param isa Dict 
         i = unique(first.(keys(param))) #input materials
         j = unique(last.(keys(param))) #output materials
+        # mats = union(keys(param)...) #all materials
         bom = NamedArray( #initialize named array
-            zeros(length(i),length(j)),
+            spzeros(length(i),length(j)),
             (i,j),
             (:in,:out)
         )
@@ -162,6 +163,7 @@ function check_bill_of_materials!(network::MetaDiGraph, n::Int)
     end
     #validate
     mats = get_prop(network, :materials)
+    @assert param isa NamedArray
     @assert (names(param,1) ⊆ mats) && (names(param,2) ⊆ mats) "Bill of material at node $n contains material names that have not been specified in the network metadata."
     @assert param isa NamedArray "The bill of materials at node $n must be a NamedArray."
 end
@@ -267,17 +269,26 @@ function update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Uni
 end
 
 """
-    store_node_materials!(network::MetaDiGraph)
+    store_node_materials!(network::MetaDiGraph, plants::Vector)
 Record which materials have non-zero capacity at each node (can be stored at that node).
-This improves performance for simulations with many materials.
+This improves performance for simulations with many materials. Sort in materials in topological order 
+    for plant nodes to account for any make-to-order intermediates.
 """
-function store_node_materials!(network::MetaDiGraph)
+function store_node_materials!(network::MetaDiGraph, plants::Vector)
     materials = get_prop(network, :materials)
     for n in vertices(network)
         n_cap = filter( #get nonzero inventory capacities
             i -> !iszero(i[2]),    
             get_prop(network, n, :inventory_capacity)
         )
-        set_prop!(network, n, :node_materials, collect(keys(n_cap)) ∩ materials)
+        n_mats = collect(keys(n_cap)) ∩ materials
+        if n in plants
+            bom = get_prop(network, n, :bill_of_materials)
+            mat_graph = material_graph(bom)
+            mat_nodes = topological_sort(mat_graph)
+            mat_node_names = [mat_graph[i,:name] for i in mat_nodes]
+            n_mats = mat_node_names ∪ n_mats
+        end
+        set_prop!(network, n, :node_materials, n_mats)
     end
 end 
