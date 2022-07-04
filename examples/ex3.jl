@@ -45,12 +45,11 @@ review_period = 1 #continuous review
 policy_variable = :echelon_stock #variable tracked by policy
 s = Dict((2,:C) => 215, (2,:B) => 190, (2,:A) => 165, (3,:A) => 60) #lower bound on inventory
 S = Dict((2,:C) => 215, (2,:B) => 190, (2,:A) => 165, (3,:A) => 60) #base stock level
-centralized = true #centralized behavior (orders are adjusted based on downstream orders)
 
 ##create environment and run simulation with reorder policy
 num_periods = 100
 env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
-simulate_policy!(env, s, S; policy_type, review_period, policy_variable, centralized)
+simulate_policy!(env, s, S; policy_type, review_period, policy_variable)
 
 ##make plots
 using DataFrames, StatsPlots

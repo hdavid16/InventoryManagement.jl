@@ -1,6 +1,6 @@
 module InventoryManagement
 
-using DataFrames, NamedArrays
+using DataFrames, NamedArrays, SparseArrays
 using Reexport
 using Random
 using IntervalSets
