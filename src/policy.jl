@@ -3,8 +3,7 @@
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0,
-                        order_multiples::Union{Real, Dict} = 1,
-                        centralized::Bool = false)
+                        order_multiples::Union{Real, Dict} = 1)
 
 Apply an inventory policy to specify the replinishment orders for each material
     throughout the `SupplyChainEnv`.
@@ -17,15 +16,13 @@ Apply an inventory policy to specify the replinishment orders for each material
 - `review_period`: number of periods between each inventory review (Default = `1` for continuous review.). If a `AbstractRange` or `Vector` is used, the `review_period` indicates which periods the review is performed on. If a `Dict` is used, the review period should be specified for each `(node, material)` `Tuple` (keys). The values of this `Dict` can be either `Int`, `AbstractRange`, or `Vector`. Any missing `(node, material)` key will be assigned a default value of 1.
 - `min_order_qty`: minimum order quantity (MOQ) at each supply node. If a `Dict` is passed, the MOQ should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of 0.
 - `order_multiples`: size increments for each order (default is -1, which means no constraint on order sizes). If a `Dict` is passed, the order multiples should be specified for each `(node, material)` `Tuple` (keys). The values should be `Real`. Any missing key will be assigned a default value of -1 (no order multiples enforced).
-- `centralized`: should the system be assumed to be centralized (default: `false`)? If `true` then the upstream nodes know how much each downstream node is going to request and adjust the stock state to account for this.
 """
 function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::Dict;
                         policy_variable::Union{Dict,Symbol} = :inventory_position,
                         policy_type::Union{Dict, Symbol} = :rQ, 
                         review_period::Union{Int, AbstractRange, Vector, Dict} = 1,
                         min_order_qty::Union{Real, Dict} = 0,
-                        order_multiples::Union{Real, Dict} = -1,
-                        centralized::Bool = false)
+                        order_multiples::Union{Real, Dict} = -1)
 
     #check review period; if not in review period, send null action
     null_action = zeros(length(env.materials)*ne(env.network))
@@ -55,16 +52,14 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
         (mats, arcs),
         (:material, :arc)
     )
-    for n in request_nodes, mat in mats
+    for n in request_nodes, mat in reverse(get_prop(env.network, n, :node_materials)) #loop materials in reverse topological order (products -> raws)
         #check if an order can be placed
         reorder_point[n,mat] < 0 && continue #if trigger level is negative, skip it
         review_period isa Dict && !isvalid_period(env.period, review_period[n,mat]) && continue #if not a review period, skip
         #review inventory at the node
         state = get_inventory_state(n, mat, policy_variable, state1_grp, state2_grp)
-        #if n is a plant, adjust the inventory state by the order from the downstream node
-        if centralized
-            state += get_expected_consumption(env, n, mat, action)
-        end
+        #if n is a plant, adjust the inventory state of raw materials by that of the expected product orders
+        state += get_expected_consumption(env, n, mat, action)
         #check if reorder is triggered & calculate quantity
         if state <= reorder_point[n,mat]
             supplier = get_prop(env.network, n, :supplier_priority)[mat][1] #get first priority supplier
@@ -122,7 +117,7 @@ function check_policy_inputs!(
                 min_order_qty[(n,mat)] = 0 #set to default value of 0
             end
             if order_multiples isa Dict && !in((n,mat), keys(order_multiples))
-                order_multiples[(n,mat)] = -1 #set to default value of 0
+                order_multiples[(n,mat)] = -1 #set to default value of -1
             end
         end
     end
@@ -154,22 +149,17 @@ end
 """
     get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
 
-Get expected raw material consumption at the producer node for downstream requests.
+Get expected material consumption at plants.
 """
 function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
     consume = 0
-    successors = setdiff(outneighbors(env.network, n), n) #get successor nodes
     if isconsumed(env, n, mat)
         bom = get_prop(env.network, n, :bill_of_materials)
         mprods = names(filter(i -> i < 0, bom[mat,:]), 1) #find which products are produced from mat
-        for succ in successors, mprod in mprods
-            ordered = action[mprod, (n, succ)] #amount ordered by successor
+        for mprod in mprods
+            ordered = action[mprod, (n, n)] #amount of product ordered
             stoich = bom[mat, mprod] #stoichiometry
             consume += ordered * stoich #amount that will be consumed to fulfill the order (negative)
-        end
-    else
-        for succ in successors
-            consume -= action[mat, (n, succ)] #amount ordered by successor
         end
     end
 
