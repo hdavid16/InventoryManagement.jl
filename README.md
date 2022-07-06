@@ -175,6 +175,7 @@ The graph metadata should have the following fields in its metadata:
 - `:partial_fulfillment::Dict`: (*only when the node has at least 1 supplier*) (`true`/`false`) on if the node accepts orders being fulfilled partially for each material (`keys`). Default = `true`.
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of suppliers (from high to low priority) for each material (`keys`). When a request cannot be fulfilled due to insufficient production capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:production_capacity::Dict`: maximum production capacity for each material (`keys`). Default = `Inf`.
+- `:make_to_order::Vector`: list of materials that are make-to-order. Default = `[]`.
 - `:bill_of_materials::Union{Dict,NamedArray}`: `keys` are material `Tuples`, where the first element is the input material and the second element is the product/output material; the `values` indicate the amount of input material consumed to produce 1 unit of output material. Alternatively, a `NamedArray` can be passed where the input materials are the rows and the output materials are the columns. The following convention is used for the bill of material (BOM) values:
   - `zero`: input not involved in production of output.
   - `negative number`: input is consumed in the production of output.
