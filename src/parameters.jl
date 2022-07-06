@@ -7,7 +7,7 @@ function identify_nodes(net::MetaDiGraph)
     nodes = vertices(net)
     #get end distributors, producers, and distribution centers
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty] #keys to identify a market
-    plant_keys = [:bill_of_materials, :production_capacity] #keys to identify a plant (producer)
+    plant_keys = [:bill_of_materials, :production_capacity, :make_to_order] #keys to identify a plant (producer)
     mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(props(net,n))))]
     plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(props(net,n))))]
 
@@ -53,6 +53,8 @@ function check_inputs!(
     for obj in keys(env_keys), key in env_keys[obj]
         if key == :bill_of_materials #check bill of materials (node specific)
             check_bill_of_materials!(network, obj)
+        elseif key == :make_to_order
+            check_make_to_order!(network, obj)
         else
             !in(key, keys(props(network, obj...))) && set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
             param_dict = get_prop(network, obj..., key) #parameter dictionary
@@ -88,7 +90,7 @@ function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Ve
     #lists of parameter keys
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :service_lead_time, :market_partial_fulfillment, :market_early_fulfillment]
-    plant_keys = [:bill_of_materials, :production_capacity]
+    plant_keys = [:bill_of_materials, :production_capacity, :make_to_order]
     arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_lead_time]
     all_market_keys = vcat(all_keys, market_keys)
     all_plant_keys = vcat(all_keys, plant_keys)
@@ -141,7 +143,7 @@ end
 """
     check_bill_of_materials!(network::MetaDiGraph, n::Int)
 
-Validate bill of material input at a node.
+Validate bill of material input at plant `n`.
 """
 function check_bill_of_materials!(network::MetaDiGraph, n::Int)
     param = get_prop(network, n, :bill_of_materials)
@@ -166,6 +168,25 @@ function check_bill_of_materials!(network::MetaDiGraph, n::Int)
     @assert param isa NamedArray
     @assert (names(param,1) ⊆ mats) && (names(param,2) ⊆ mats) "Bill of material at node $n contains material names that have not been specified in the network metadata."
     @assert param isa NamedArray "The bill of materials at node $n must be a NamedArray."
+end
+
+"""
+    check_make_to_order!(network::MetaDiGraph, n::Int)
+
+Check list of make to order materials at plant `n`.
+"""
+function check_make_to_order!(network::MetaDiGraph, n::Int)
+    if !in(:make_to_order, keys(props(network,n)))
+        set_prop!(network, n, :make_to_order, []) #default is no make to order materials
+    else
+        mto = get_prop(network, n, :make_to_order)
+        @assert mto isa Vector "Make-to-order materials for node $n must be a `Vector`."
+        mats = get_prop(network, :materials)
+        remove = setdiff(mto, mats)
+        @assert isempty(remove) "Some make-to-order materials at node $n are not listed in the system materials:\n$(join(remove,"\n"))."
+        not_mto = filter(i -> !isproduced(network, n, i), mto)
+        @assert isempty(not_mto) "Some make-to-order materials are not produced at node $n:\n$(join(not_mto,"\n"))."        
+    end
 end
 
 """

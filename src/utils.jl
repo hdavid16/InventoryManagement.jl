@@ -17,7 +17,7 @@ isproduced(env::SupplyChainEnv, n, mat) = isproduced(env.network,n,mat)
 """
     isconsumed(net::Union{MetaDiGraph,SupplyChainEnv}, n::Int, mat::Union{Symbol,String})
 
-Check if material `mat` isa consumed in node `n`.
+Check if material `mat` is consumed in node `n`.
 """
 function isconsumed(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
     !in(:bill_of_materials, keys(props(net,n))) && return false #n is not a plant
@@ -29,6 +29,17 @@ function isconsumed(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
     return true
 end
 isconsumed(env::SupplyChainEnv, n, mat) = isconsumed(env.network,n,mat)
+
+"""
+    ismto(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+
+Check if material `mat` is make-to-order in node `n`.
+"""
+function ismto(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+    !in(:make_to_order, keys(props(x.network,n))) && return false #n is not a plant
+    mto = get_prop(x.network, n, :make_to_order)
+    return mat in mto
+end    
 
 """
     get_capacity_and_supply(

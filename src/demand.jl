@@ -79,19 +79,11 @@ end
 Delete expired orders (lost sales).
 """
 function lost_sales!(x::SupplyChainEnv)
-    expired_orders = filter(:due => t -> t <= 0, x.open_orders, view=true).id
-    for id in expired_orders
-        push!(x.fulfillments, (id, x.period, a[1], :lost_sale))
+    expired_orders = filter(:due => t -> t <= 0, x.open_orders, view=true)
+    for row in eachrow(expired_orders)
+        push!(x.fulfillments, (row.id, x.period, row.arc[1], :lost_sale))
     end
     if !isempty(expired_orders)
-        append!(x.fulfillments, 
-            DataFrame(
-                id = expired_orders,
-                time = x.period,
-                supplier = a[1],
-                amount = :lost_sale
-            )
-        )
         filter!(:due => t -> t > 0, x.open_orders)
     end
 end
@@ -123,11 +115,11 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount]) #update order history
     push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_lead_time]) #add order to temp order df
-    if sup == req && isproduced(x, sup, mat)
+    if (sup == req && isproduced(x,sup,mat)) || (req == :market && ismto(x,sup,mat))
         bom = get_prop(x.network, sup, :bill_of_materials)
         rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names
-            # push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:production), rmat, -amount*bom[rmat,mat]])
+            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:production), rmat, -amount*bom[rmat,mat]]) #update order history
             push!(x.open_orders, [x.num_orders, (sup,:production), rmat, -amount*bom[rmat,mat], service_lead_time])
         end
     end
@@ -241,6 +233,7 @@ function simulate_markets!(x::SupplyChainEnv)
         serv_dist_dict = get_prop(x.network, n, :service_lead_time)
         n_mats = get_prop(x.network, n, :node_materials)
         for mat in n_mats
+            #get demand parameters
             p = dmnd_freq_dict[mat] #probability of demand occuring
             dmnd = dmnd_dist_dict[mat] #demand distribution
             serv_lt = serv_dist_dict[mat] #service lead time
@@ -252,12 +245,17 @@ function simulate_markets!(x::SupplyChainEnv)
                     create_order!(x, n, :market, mat, q, slt)
                 end
             end
-            #if material is make-to-order (is produced and stock is 0) and the production time is 0, then trigger production directly
-            if isproduced(x.network,n,mat) && iszero(supply_grp[(node=n,material=mat)].level[1]) && (get_prop(x.network, n, n, :lead_time)[mat] |> lt -> !isa(lt, Sampleable) && iszero(lt))
+            #fulfill demand (will include any backlogged orders)
+            #if material is make-to-order and the production time is 0, then trigger production directly
+            trigger_production = 
+                ismto(x,n,mat) && #check if material is make-to-order
+                (get_prop(x.network, n, n, :lead_time)[mat] |> 
+                    lt -> !isa(lt, Sampleable) && iszero(lt)) #0 production lead time
+            if trigger_production
                 capacities = get_prop(x.network, n, :production_capacity)
                 fulfill_from_production!(x, n, :market, mat, 0., supply_grp, missing, capacities)
+            #fulfill orders from stock 
             else
-                #fulfill orders from stock (will include any backlogged orders)
                 fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
             end
         end

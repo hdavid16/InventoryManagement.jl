@@ -45,7 +45,7 @@ end
 Fulfill request by scheduling material production.
 """
 function fulfill_from_production!(
-    x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
+    x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
     lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{GroupedDataFrame,Missing}, capacities::Dict
 )
 
