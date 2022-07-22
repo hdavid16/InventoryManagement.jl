@@ -33,7 +33,8 @@ function fulfill_from_stock!(
         end
     end
     #remove any fulfilled orders from x.open_orders
-    filter!(:quantity => q -> q > 0, x.open_orders) 
+    fulfilled_orders = filter(:quantity => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
+    filter!(:id => id -> !in(id, fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
 end
 
 """
@@ -84,7 +85,8 @@ function fulfill_from_production!(
         end
     end
     #remove any fulfilled orders from x.open_orders
-    filter!(:quantity => q -> q > 0, x.open_orders) 
+    fulfilled_orders = filter(:quantity => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
+    filter!(:id => id -> !in(id, fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
 end
 
 """
