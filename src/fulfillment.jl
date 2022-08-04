@@ -23,7 +23,7 @@ function fulfill_from_stock!(
         accepted_inv = accepted_from_stock(order_amount, supply, partial_fulfillment)
         if accepted_inv > 0
             row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
-            push!(x.fulfillments, (row.id, x.period, src, accepted_inv)) #update order fulfillments log (date, supplier, amount fulfilled)
+            push!(x.fulfillments, (row.id, x.period, mat, src, accepted_inv)) #update order fulfillments log (date, supplier, amount fulfilled)
             push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
             supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
             dst != :market && make_shipment!(x, src, dst, mat, accepted_inv, lead, supply_grp, pipeline_grp) #ship material (unless it is external demand)
