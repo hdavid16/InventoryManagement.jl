@@ -234,6 +234,7 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
     fulfillments = DataFrame(
         id = Int[],
         time = [],
+        material = [],
         supplier = [],
         amount = []
     )
