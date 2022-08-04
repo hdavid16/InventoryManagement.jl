@@ -4,13 +4,8 @@
 Place inventory replenishment requests throughout the network.
 """
 function place_orders!(x::SupplyChainEnv, act::NamedArray)
-    arcs = names(act,2) #arcs
-
-    #exit if no action and there is no backlogging
-    if !x.options[:backlog] && iszero(act)
-        exit_place_orders!(x, arcs)
-        return
-    end
+    #if no replenishments requested and no open orders exist, exit
+    iszero(act) && isempty(x.open_orders) && return
     #extract info
     mats = x.materials #materials
     #store original production capacities (to account for commited capacity and commited inventory in next section)
@@ -28,7 +23,7 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     #get pipeline inventory
     pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
     pipeline_grp = groupby(pipeline_df, [:arc, :material])
-    #get existing open orders
+    #get copy of existing open orders
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
     #place requests
@@ -42,11 +37,9 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             amount = act[mat, a] #amount requested
             #continue to next iteration if no request made and no backlog
             if iszero(amount)
-                #calculate outstanding orders (backlog) to determine if an order should be placed even if amount = 0 (will be 0 if assuming lost sales)
-                arcs_list = [a,(req,:production)]
-                backlog = calculate_backlog(x, arcs_list, mat, orders_grp) #include any outstanding raw material conversion orders (:production)
-                if iszero(backlog)
-                    push!(x.demand, [x.period, a, mat, 0, 0, 0, 0, missing])
+                #determine if there are any open orders for this material on the arc. If not, skip the fulfillment step.
+                pending = calculate_pending([a,(req,:production)], mat, orders_grp) #include any raw material conversion orders (:production)
+                if iszero(pending)
                     continue 
                 end
             else
@@ -81,28 +74,10 @@ Delete expired orders (lost sales).
 function lost_sales!(x::SupplyChainEnv)
     expired_orders = filter(:due => t -> t <= 0, x.open_orders, view=true)
     for row in eachrow(expired_orders)
-        push!(x.fulfillments, (row.id, x.period, row.arc[1], :lost_sale))
+        push!(x.fulfillments, (row.id, x.period, row.material, row.arc[1], :lost_sale))
     end
     if !isempty(expired_orders)
         filter!(:due => t -> t > 0, x.open_orders)
-    end
-end
-
-"""
-    exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
-
-Abort order placement.
-"""
-function exit_place_orders!(x::SupplyChainEnv, arcs::Vector)
-    due_by = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
-    orders_df = filter(:due => j -> j <= due_by, x.open_orders, view=true) #orders to count in backlogging
-    orders_grp = groupby(orders_df, [:arc, :material]) #group by arc and material
-    for a in arcs
-        dst_mats = get_prop(x.network, a[2], :node_materials)
-        for mat in dst_mats
-            backlog = calculate_backlog(x, [a], mat, orders_grp)
-            push!(x.demand, [x.period, a, mat, 0, 0, 0, backlog, missing])
-        end
     end
 end
 
@@ -123,7 +98,6 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
             push!(x.open_orders, [x.num_orders, (sup,:production), rmat, -amount*bom[rmat,mat], service_lead_time])
         end
     end
-    sort!(x.open_orders, [:due, :id]) #sort by service lead time and creation date (serve orders with lowest service lead time, ranked by order age)
 end
 
 """
@@ -138,10 +112,12 @@ function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, ma
     early_fulfillment = get_prop(x.network, indicator_node, param_key)[mat]
     #loop through orders on relevant arc
     if src == dst || early_fulfillment #assume production at plant accepts early fulfillment
-        return all_relevant_orders(x,src,dst,mat)
+        rel_orders = all_relevant_orders(x,src,dst,mat)
     else #only attempt to fulfill orders that have expired their service lead time
-        return expired_relevant_orders(x,src,dst,mat)
+        rel_orders = expired_relevant_orders(x,src,dst,mat)
     end
+    #return sorted by soonest due date
+    return sort(rel_orders, [:due, :id], view=true) #sort by service lead time and creation date (serve orders with lowest service lead time, ranked by order age)
 end
 """
     all_relevant_orders(x::SupplyChainEnv, src::Int, [dst::Union{Int,Symbol},] mat::Union{Symbol,String})
@@ -152,8 +128,8 @@ all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Un
     filter( 
         [:arc, :material] => 
             (a,m) -> 
-                a == (src,dst) && #production orders at `n`
-                m == mat, #orders for the same material
+                m == mat && #orders for the same material
+                a == (src,dst), #production orders at `n`
         x.open_orders, 
         view = true
     )
@@ -166,9 +142,9 @@ expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat
     filter(
         [:arc, :material, :due] => 
             (a,m,t) -> 
-                a == (src,dst) && #nodes with the arc
+                t <= 0 && #expired orders
                 m == mat &&  #orders for the same material
-                t <= 0, #expired orders
+                a == (src,dst), #nodes with the arc
         x.open_orders, 
         view = true
     )
@@ -226,6 +202,7 @@ Open markets, apply material demands, and update inventory positions.
 function simulate_markets!(x::SupplyChainEnv)
     supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
     supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
+    orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
     for n in x.markets
         dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
@@ -237,6 +214,7 @@ function simulate_markets!(x::SupplyChainEnv)
             p = dmnd_freq_dict[mat] #probability of demand occuring
             dmnd = dmnd_dist_dict[mat] #demand distribution
             serv_lt = serv_dist_dict[mat] #service lead time
+            last_order_id = x.num_orders #last order created in system
             #place p orders
             for _ in 1:floor(p) + rand(Bernoulli(p % 1)) #p is the number of orders. If fractional, the fraction is the likelihood of rounding up.
                 q = rand(dmnd) #sample demand
@@ -245,17 +223,16 @@ function simulate_markets!(x::SupplyChainEnv)
                     create_order!(x, n, :market, mat, q, slt)
                 end
             end
-            #fulfill demand (will include any backlogged orders)
-            #if material is make-to-order and the production time is 0, then trigger production directly
-            trigger_production = 
-                ismto(x,n,mat) && #check if material is make-to-order
-                (get_prop(x.network, n, n, :lead_time)[mat] |> 
-                    lt -> !isa(lt, Sampleable) && iszero(lt)) #0 production lead time
-            if trigger_production
+            #if no new orders were created, check if there are any pending orders; if not, the exit iteration
+            if last_order_id == x.num_orders
+                pending = calculate_pending([(n,:market)], mat, orders_grp)
+                iszero(pending) && continue
+            end
+            #fulfill demand (will include any open orders)
+            if ismto(x,n,mat) #fulfill make-to-order from production
                 capacities = get_prop(x.network, n, :production_capacity)
                 fulfill_from_production!(x, n, :market, mat, 0., supply_grp, missing, capacities)
-            #fulfill orders from stock 
-            else
+            else #fulfill orders from stock 
                 fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
             end
         end
