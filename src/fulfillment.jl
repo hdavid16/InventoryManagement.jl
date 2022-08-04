@@ -71,7 +71,7 @@ function fulfill_from_production!(
             row.quantity -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
             #consume reactant
             for rmat in rmat_names
-                consume_reactant!(row.id, src, rmat, bom[rmat,mat], accepted_prod, supply_grp, raw_orders_grp) 
+                consume_reactant!(x, row.id, src, rmat, bom[rmat,mat], order_amount, accepted_prod, lead, supply_grp, raw_orders_grp) 
             end
             #schedule coproduction
             for cmat in cmat_names
@@ -131,14 +131,16 @@ function accepted_production(order_amount, cap_and_sup, partial_fulfillment)
 end
 
 """
-    consume_reactant!(order_id, src, rmat, stoich, accepted_prod, supply_grp, raw_orders_grp)
+    consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, order_amount, accepted_prod, lead, supply_grp, raw_orders_grp)
 
 Consume reactant `rmat` and update inventory and orders.
 """
-function consume_reactant!(order_id, src, rmat, stoich, accepted_prod, supply_grp, raw_orders_grp)
+function consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, order_amount, accepted_prod, lead, supply_grp, raw_orders_grp)
     consumed = accepted_prod * stoich #negative number
     supply_grp[(node = src, material = rmat)].level[1] += consumed
     raw_orders_grp[(id = order_id, material = rmat)].quantity[1] += consumed
+    push!(x.fulfillments, (order_id, x.period, rmat, src, -consumed)) #update order fulfillments (date, supplier, and amount fulfilled)
+    push!(x.demand, [x.period, (src,:production), rmat, -order_amount*stoich, -consumed, lead, 0, missing]) #log demand
 end
 
 """
@@ -164,7 +166,7 @@ Produce material `mat` and create shipments and update fulfillments/demand table
 """
 function production!(x::SupplyChainEnv, order_id, src, dst, mat, order_amount, accepted_prod, lead, supply_grp, pipeline_grp, capacities)
     capacities[mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
-    push!(x.fulfillments, (order_id, x.period, src, accepted_prod)) #update order fulfillments (date, supplier, and amount fulfilled)
+    push!(x.fulfillments, (order_id, x.period, mat, src, accepted_prod)) #update order fulfillments (date, supplier, and amount fulfilled)
     push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_prod, lead, 0, missing]) #log demand
     dst != :market && make_shipment!(x, src, dst, mat, accepted_prod, lead, supply_grp, pipeline_grp) 
 end
