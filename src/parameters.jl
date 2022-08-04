@@ -33,17 +33,16 @@ function identify_echelons(network::MetaDiGraph, n::Int)
 end
 
 """
-    check_inputs!(
-        network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
-        mrkts::Vector, plants::Vector, mats::Vector, num_periods::Int
-    )
+    check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
 
 Check inputs when creating a `SupplyChainEnv`.
 """
-function check_inputs!(
-    network::MetaDiGraph, nodes::Base.OneTo, arcs::Vector,
-    mrkts::Vector, plants::Vector, mats::Vector, num_periods::Int
-)
+function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
+
+    nodes = vertices(network) #network nodes
+    arcs = [(e.src,e.dst) for e in edges(network)] #network edges as Tuples (not Edges)
+    mats = get_prop(network, :materials) #materials
+
     #initialize flags
     truncate_flag, roundoff_flag, replace_flag = false, false, false
     

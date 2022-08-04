@@ -8,26 +8,22 @@ Calculate profit at each node in the network
 """
 function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     #filter data
-    on_hand_df = filter([:period, :level] => (j1, j2) -> j1 == x.period && !isinf(j2), x.inventory_on_hand, view=true) #on_hand inventory 
-    onhand_grp = groupby(on_hand_df, [:node, :material])
     sales_df = filter([:period, :arc] => (t,a) -> t == x.period, x.demand, view=true) #replenishment orders
     sales_grp = groupby(sales_df, [:arc, :material])
-    pipeline_df = filter(:period => j -> j == x.period, x.inventory_pipeline, view=true) #pipeline inventories
-    pipeline_grp = groupby(pipeline_df, [:arc, :material])
 
     #evaluate node profit
     for n in vertices(x.network)
         profit = 0. #initialize node profit
         for mat in x.materials
             #holding cost
-            profit += holding_costs(x, n, mat, onhand_grp)
+            profit += holding_costs(x, n, mat)
             #sales profit at markets (and penalize for unfulfilled demand)
             if n in x.markets
                 profit += sum(sales_and_penalties(x, n, mat, sales_grp))
             end
             #pay suppliers for received inventory and pay transportation/production cost
             for sup in inneighbors(x.network, n)
-                profit += purchases_and_pipeline_costs(x, sup, n, mat, arrivals, pipeline_grp)
+                profit += purchases_and_pipeline_costs(x, sup, n, mat, arrivals)
             end
             #receive payment for delivered inventory and pay unfulfilled demand penalties
             for req in outneighbors(x.network, n)
@@ -41,17 +37,17 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
 end
 
 """
-    holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, onhand_grp::GroupedDataFrame)
+    holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
 
 Calculate inventory holding costs (negative).
 """
-function holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, onhand_grp::GroupedDataFrame)
+function holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
     #holding cost
     hold_cost = get_prop(x.network, n, :holding_cost)[mat]
     c = 0
     if hold_cost > 0
-        onhand = onhand_grp[(node = n, material = mat)].level
-        if !isempty(onhand)
+        onhand = x.tmp[n,mat,:on_hand]
+        if !isinf(onhand)
             c -= hold_cost * onhand[1]
         end
     end
@@ -100,11 +96,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String
 end
 
 """
-    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame)
 
 Calculate payments to suppliers and transportation costs (fixed and variable) (negative).
 """
-function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame, pipeline_grp::GroupedDataFrame)
+function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame)
     price = get_prop(x.network, sup, n, :sales_price)[mat]
     trans_cost = get_prop(x.network, sup, n, :transportation_cost)[mat]
     pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]
@@ -117,7 +113,7 @@ function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::
         end
     end
     if pipe_holding_cost > 0 #pay pipeline holding cost (paid for in-transit inventory in the current period)
-        intransit = pipeline_grp[(arc = (sup, n), material = mat)].level[1]
+        intransit = x.tmp[(sup,n),mat,:pipeline]
         ap -= intransit * pipe_holding_cost
     end
 

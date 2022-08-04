@@ -17,12 +17,6 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     nodes = topological_sort(x.network) #sort nodes in topological order so that orders are placed moving down the network
     source_nodes = filter(n -> isempty(inneighbors(x.network, n)), nodes) #source nodes (can't place replenishment orders)
     request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
-    #get on hand inventory
-    supply_df = filter(:period => k -> k == x.period, x.inventory_on_hand, view=true) #on_hand inventory supply
-    supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
-    #get pipeline inventory
-    pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
-    pipeline_grp = groupby(pipeline_df, [:arc, :material])
     #get copy of existing open orders
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
@@ -48,9 +42,9 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             end
             #try to fulfill request
             if sup == req
-                fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities[sup])
+                fulfill_from_production!(x, a..., mat, lead, capacities[sup])
             else
-                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
+                fulfill_from_stock!(x, a..., mat, lead)
             end
         end
     end
@@ -200,8 +194,6 @@ end
 Open markets, apply material demands, and update inventory positions.
 """
 function simulate_markets!(x::SupplyChainEnv)
-    supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
-    supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
     for n in x.markets
@@ -231,9 +223,10 @@ function simulate_markets!(x::SupplyChainEnv)
             #fulfill demand (will include any open orders)
             if ismto(x,n,mat) #fulfill make-to-order from production
                 capacities = get_prop(x.network, n, :production_capacity)
-                fulfill_from_production!(x, n, :market, mat, 0., supply_grp, missing, capacities)
+                prod_lt = rand(get_prop(x.network, n, n, :lead_time)[mat])
+                fulfill_from_production!(x, n, :market, mat, prod_lt, capacities)
             else #fulfill orders from stock 
-                fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
+                fulfill_from_stock!(x, n, :market, mat, 0.) #0 lead time since at market
             end
         end
     end
