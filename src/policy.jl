@@ -38,7 +38,11 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     mats = env.materials
 
     #check inputs
-    check_policy_inputs!(reorder_point, policy_param, review_period, min_order_qty, order_multiples, mats, request_nodes, supply_nodes)
+    check_policy_input!(reorder_point, request_nodes, mats, default = -Inf) #if no policy given for a node/material, set the params to -Inf so that a reorder is never triggered
+    check_policy_input!(policy_param, request_nodes, mats, default = -Inf) #if no policy given for a node/material, set the params to -Inf so that a reorder is never triggered
+    check_policy_input!(review_period, request_nodes, mats, default = 1)
+    check_policy_input!(min_order_qty, supply_nodes, mats, default = 0)
+    check_policy_input!(order_multiples, supply_nodes, mats, default = -1) #default is to not apply order multiple requirement
 
     #filter data for policy
     state1_df = filter(:period => j -> j == env.period, env.inventory_position, view=true) #inventory position
@@ -77,51 +81,21 @@ end
 
 Check if current period is a review period.
 """
-function isvalid_period(period::Int, review_period::Union{Int, AbstractRange, Vector, Dict})
-    if review_period isa Int && !iszero(mod(period,review_period)) 
-        return false
-    elseif review_period isa Union{AbstractRange,Vector} && !in(period, review_period)
-        return false
-    else
-        return true
-    end
-end
+isvalid_period(period::Int, review_period::Real) = iszero(mod(period,review_period))
+isvalid_period(period::Int, review_period::Union{Vector,AbstractRange}) = period in review_period
+isvalid_period(period::Int, review_period::Dict) = any(isvalid_period.(period, values(review_period)))
 
 """
-    check_policy_inputs!(
-        reorder_point::Dict, policy_param::Dict, review_period::Union{Int, AbstractRange, Vector, Dict}, 
-        min_order_qty::Union{Real, Dict}, order_multiples::Union{Real, Dict}, mats::Vector, request_nodes::Vector, supply_nodes::Vector
-    )
+    check_policy_input!(param::Dict, relevant_nodes::Vector, mats::Vector; default::Real)
 
-Validate inputs to inventory policy.
+Set default value for missing keys in inventory policy parameter dictionary.
 """
-function check_policy_inputs!(
-    reorder_point::Dict, policy_param::Dict, review_period::Union{Int, AbstractRange, Vector, Dict}, 
-    min_order_qty::Union{Real, Dict}, order_multiples::Union{Real, Dict}, 
-    mats::Vector, request_nodes::Vector, supply_nodes::Vector
-)
-    #check inputs
-    for mat in mats
-        for n in request_nodes
-            for param in [reorder_point, policy_param] 
-                if !in((n,mat), keys(param)) 
-                    param[(n,mat)] = -1 #if no policy given for a node/material, set the params to -1 so that a reorder is never triggered
-                end
-            end
-            if review_period isa Dict && !in((n,mat), keys(review_period))
-                review_period[(n,mat)] = 1 #set to default value of 1
-            end
-        end
-        for n in supply_nodes
-            if min_order_qty isa Dict && !in((n,mat), keys(min_order_qty))
-                min_order_qty[(n,mat)] = 0 #set to default value of 0
-            end
-            if order_multiples isa Dict && !in((n,mat), keys(order_multiples))
-                order_multiples[(n,mat)] = -1 #set to default value of -1
-            end
-        end
+function check_policy_input!(param::Dict, relevant_nodes::Vector, mats::Vector; default::Real)
+    for key in setdiff(Iterators.product(relevant_nodes, mats), keys(param))
+        param[key] = default
     end
 end
+check_policy_input!(args...; kwargs...) = nothing
 
 """
     get_inventory_state(
