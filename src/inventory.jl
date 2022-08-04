@@ -79,11 +79,11 @@ function update_inventories!(x::SupplyChainEnv)
 end
 
 """
-    calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
+    calculate_pending(arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
 
-Calculate backlogged orders using pre-filtered grouped dataframe.
+Calculate commited material quantity (open orders) using a pre-filtered grouped dataframe.
 """
-calculate_backlog(x::SupplyChainEnv, arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame) =
+calculate_pending(arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame) =
     sum(
         sum(orders_grp[(arc = a, material = mat)].quantity; init=0) 
         for a in arcs if (arc = a, material = mat) in keys(orders_grp); 
@@ -125,9 +125,9 @@ function inventory_components(
             (n,:market), #market sales
             [(n,succ) for succ in outneighbors(x.network,n) if n != succ] #downstream replenishments
         )
-        backlog = calculate_backlog(x,arcs_out,mat,orders_grp) 
+        backlog = calculate_pending(arcs_out,mat,orders_grp) 
         arcs_in = [(pred,n) for pred in inneighbors(x.network, n)] #backorder includes previous replenishment orders placed to upstream nodes
-        backorder = calculate_backlog(x,arcs_in,mat,orders_grp) 
+        backorder = calculate_pending(arcs_in,mat,orders_grp) 
     end
     ilevel = onhand - backlog #inventory level
     iorder = pipeline + backorder #inventory on order
