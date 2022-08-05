@@ -65,7 +65,7 @@ Calculate commited material quantity (open orders) using a pre-filtered grouped 
 """
 calculate_pending(arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame) =
     sum(
-        sum(orders_grp[(arc = a, material = mat)].quantity; init=0) 
+        sum(orders_grp[(arc = a, material = mat)].amount; init=0) 
         for a in arcs if (arc = a, material = mat) in keys(orders_grp); 
         init = 0
     )
@@ -100,7 +100,7 @@ function inventory_components(
     backlog = 0 #initialize backlog for orders placed by successors
     if x.options[:backlog]
         arcs_out = vcat( #nodes accounted for in backlog
-            (n,:production), #raw material conversion
+            (n,:consumption), #raw material conversion
             (n,:market), #market sales
             [(n,succ) for succ in outneighbors(x.network,n) if n != succ] #downstream replenishments
         )
@@ -133,14 +133,16 @@ function update_dfs!(x::SupplyChainEnv)
     for n in vertices(x.network)
         for m in get_prop(x.network, n, :node_materials)
             #add rows to dfs
-            push!(x.inventory_on_hand, (x.period, n, m, x.tmp[n,m,:on_hand], x.tmp[n,m,:discarded]))
-            push!(x.inventory_level, (x.period, n, m, x.tmp[n,m,:level]))
-            push!(x.inventory_position, (x.period, n, m, x.tmp[n,m,:position]))
-            push!(x.echelon_stock, (x.period, n, m, x.tmp[n,m,:echelon]))
+            if !iszero(x.tmp[n,m,:discarded])
+                push!(x.inventory, (x.period, n, m, x.tmp[n,m,:discarded], :discarded))
+            end
+            push!(x.inventory, (x.period, n, m, x.tmp[n,m,:on_hand], :on_hand))
+            push!(x.inventory, (x.period, n, m, x.tmp[n,m,:level], :level))
+            push!(x.inventory, (x.period, n, m, x.tmp[n,m,:position], :position))
+            push!(x.inventory, (x.period, n, m, x.tmp[n,m,:echelon], :echelon))
             for dst in outneighbors(x.network, n)
                 arc = (n,dst)
-                #add rows to dfs
-                push!(x.inventory_pipeline, (x.period, arc, m, x.tmp[arc,m,:pipeline]))
+                push!(x.inventory, (x.period, arc, m, x.tmp[arc,m,:pipeline], :pipeline))
             end
         end
     end

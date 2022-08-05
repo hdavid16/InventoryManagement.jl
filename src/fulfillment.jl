@@ -19,21 +19,20 @@ function fulfill_from_stock!(
     #loop through orders on relevant arc
     orders_df = relevant_orders(x, src, dst, mat)
     for row in eachrow(orders_df)
-        order_amount = row.quantity
+        order_amount = row.amount
         accepted_inv = accepted_from_stock(order_amount, supply, partial_fulfillment)
         if accepted_inv > 0
-            row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
-            push!(x.fulfillments, (row.id, x.period, mat, src, accepted_inv)) #update order fulfillments log (date, supplier, amount fulfilled)
-            push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
+            row.amount -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
+            push!(x.fulfillments, (row.id, x.period, x.period + lead, (src,dst), mat, accepted_inv)) #update order fulfillments log (date, supplier, amount fulfilled)
             x.tmp[src,mat,:on_hand] -= accepted_inv #remove inventory from site
             dst != :market && make_shipment!(x, src, dst, mat, accepted_inv, lead) #ship material (unless it is external demand)
         end
-        if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate
+        if row.amount > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate
             log_unfulfilled_demand!(x, row, accepted_inv)
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = filter(:quantity => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
+    fulfilled_orders = filter(:amount => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
     filter!(:id => id -> !in(id, fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
 end
 
@@ -58,34 +57,34 @@ function fulfill_from_production!(
     rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
     cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
 
-    #get relevant orders on that arc & raw material orders (:production)
+    #get relevant orders on that arc & raw material orders (:consumption)
     orders_df = relevant_orders(x, src, dst, mat) #NOTE: Assume that if plant requests production, it will accept early fulfillment
     raw_orders_grp = raw_material_orders(x, orders_df.id, rmat_names)
     #loop through orders on relevant arc
     for row in eachrow(orders_df)
         cap_and_sup = get_capacity_and_supply(x, src, mat, bom, rmat_names, cmat_names, capacities)
-        order_amount = row.quantity #amount requested in order
+        order_amount = row.amount #amount requested in order
         accepted_prod = accepted_production(order_amount, cap_and_sup, partial_fulfillment) #amount accepted
         if accepted_prod > 0
             #fulfill order (may be partial)
-            row.quantity -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
+            row.amount -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
             #consume reactant
             for rmat in rmat_names
-                consume_reactant!(x, row.id, src, rmat, bom[rmat,mat], order_amount, accepted_prod, lead, raw_orders_grp) 
+                consume_reactant!(x, row.id, src, rmat, bom[rmat,mat], accepted_prod, lead, raw_orders_grp) 
             end
             #schedule coproduction
             for cmat in cmat_names
-                co_production!(x, src, dst, cmat, bom[cmat,mat], accepted_prod, lead, capacities)
+                co_production!(x, row.id, src, dst, cmat, bom[cmat,mat], accepted_prod, lead, capacities)
             end
             #schedule production
-            production!(x, row.id, src, dst, mat, order_amount, accepted_prod, lead, capacities)
+            production!(x, row.id, src, dst, mat, accepted_prod, lead, capacities)
         end
-        if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled, log it as unfulfilled & try to reallocate it
+        if row.amount > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled, log it as unfulfilled & try to reallocate it
             log_unfulfilled_demand!(x, row, accepted_prod)
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = filter(:quantity => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
+    fulfilled_orders = filter(:amount => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
     filter!(:id => id -> !in(id, fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
 end
 
@@ -131,27 +130,26 @@ function accepted_production(order_amount, cap_and_sup, partial_fulfillment)
 end
 
 """
-    consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, order_amount, accepted_prod, lead, raw_orders_grp)
+    consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, accepted_prod, lead, raw_orders_grp)
 
 Consume reactant `rmat` and update inventory and orders.
 """
-function consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, order_amount, accepted_prod, lead, raw_orders_grp)
+function consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, accepted_prod, lead, raw_orders_grp)
     consumed = accepted_prod * stoich #negative number
     x.tmp[src,rmat,:on_hand] += consumed
-    raw_orders_grp[(id = order_id, material = rmat)].quantity[1] += consumed
-    push!(x.fulfillments, (order_id, x.period, rmat, src, -consumed)) #update order fulfillments (date, supplier, and amount fulfilled)
-    push!(x.demand, [x.period, (src,:production), rmat, -order_amount*stoich, -consumed, lead, 0, missing]) #log demand
+    raw_orders_grp[(id = order_id, material = rmat)].amount[1] += consumed
+    push!(x.fulfillments, (order_id, x.period, x.period + lead, (src,:consumption), rmat, -consumed)) #update order fulfillments (date, supplier, and amount fulfilled)
 end
 
 """
-    co_production!(x::SupplyChainEnv, src, dst, cmat, stoich, accepted_prod, lead, capacities)
+    co_production!(x::SupplyChainEnv, order_id, src, dst, cmat, stoich, accepted_prod, lead, capacities)
 
 Produce coproduct `cmat` and update inventory and shipments
 """
-function co_production!(x::SupplyChainEnv, src, dst, cmat, stoich, accepted_prod, lead, capacities)
+function co_production!(x::SupplyChainEnv, order_id, src, dst, cmat, stoich, accepted_prod, lead, capacities)
     coproduction = accepted_prod*stoich
     capacities[cmat] -= coproduction #update coproduct production capacity
-    push!(x.demand, [x.period, (src,dst), cmat, 0, coproduction, lead, 0, missing]) #log demand
+    push!(x.fulfillments, (order_id, x.period, x.period + lead, (src,:coproduction), cmat, coproduction))
     if dst == :market && iszero(lead) #only triggered if make-to-order & has 0 production lead time
         x.tmp[src,cmat,:on_hand] += coproduction
     else
@@ -160,14 +158,13 @@ function co_production!(x::SupplyChainEnv, src, dst, cmat, stoich, accepted_prod
 end
 
 """
-    production!(x::SupplyChainEnv, src, dst, mat, order_amount, accepted_prod, lead, capacities)
+    production!(x::SupplyChainEnv, src, dst, mat, accepted_prod, lead, capacities)
 
 Produce material `mat` and create shipments and update fulfillments/demand tables.
 """
-function production!(x::SupplyChainEnv, order_id, src, dst, mat, order_amount, accepted_prod, lead, capacities)
+function production!(x::SupplyChainEnv, order_id, src, dst, mat, accepted_prod, lead, capacities)
     capacities[mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
-    push!(x.fulfillments, (order_id, x.period, mat, src, accepted_prod)) #update order fulfillments (date, supplier, and amount fulfilled)
-    push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_prod, lead, 0, missing]) #log demand
+    push!(x.fulfillments, (order_id, x.period, x.period + lead, (src,dst), mat, accepted_prod)) #update order fulfillments (date, supplier, and amount fulfilled)
     dst != :market && make_shipment!(x, src, dst, mat, accepted_prod, lead) 
 end
 

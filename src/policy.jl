@@ -171,16 +171,16 @@ function calculate_reorder(
 end
 
 """
-    simulate_policy!(env::SupplyChainEnv, args...)
+    simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), kwargs...)
 
 Step through a simulation using a specified reorder policy. `args` are the
 arguments that are passed to the `reorder_policy` function.
 """
-function simulate_policy!(env::SupplyChainEnv, args...; kwargs...)
+function simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), kwargs...)
     for _ in 1:env.num_periods
         action = reorder_policy(env, args...; kwargs...)
         (env)(action)
     end
 
-    calculate_service_measures!(env)
+    calculate_service_measures!(env; window)
 end

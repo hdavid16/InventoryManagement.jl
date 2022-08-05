@@ -8,8 +8,10 @@ Calculate profit at each node in the network
 """
 function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
     #filter data
-    sales_df = filter([:period, :arc] => (t,a) -> t == x.period, x.demand, view=true) #replenishment orders
-    sales_grp = groupby(sales_df, [:arc, :material])
+    sales_df1 = filter(:delivered => t -> t == x.period, x.fulfillments, view=true) #delivered orders + lost sales
+    sales_grp1 = groupby(sales_df1, [:arc, :material])
+    orders_df1 = filter([:id,:due] => (id,due) -> id in sales_df.id && due <= 0, x.open_orders, view=true) #backlogged order quantities
+    orders_grp1 = groupby(orders_df1, [:arc, :material])
 
     #evaluate node profit
     for n in vertices(x.network)
@@ -19,7 +21,7 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
             profit += holding_costs(x, n, mat)
             #sales profit at markets (and penalize for unfulfilled demand)
             if n in x.markets
-                profit += sum(sales_and_penalties(x, n, mat, sales_grp))
+                profit += sum(sales_and_penalties(x, n, :market, mat, sales_grp1, orders_grp1))
             end
             #pay suppliers for received inventory and pay transportation/production cost
             for sup in inneighbors(x.network, n)
@@ -27,7 +29,7 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
             end
             #receive payment for delivered inventory and pay unfulfilled demand penalties
             for req in outneighbors(x.network, n)
-                profit += sum(sales_and_penalties(x, n, req, mat, sales_grp, arrivals))
+                profit += sum(sales_and_penalties(x, n, req, mat, sales_grp1, orders_grp1))
             end
         end
 
@@ -56,38 +58,23 @@ function holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
 end
 
 """
-    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame, arrivals::DataFrame)
+    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame, orders_grp1::GroupedDataFrame)
 
-Calculate sales (positive) and unfulfilled demand penalties (negative) for internal demand.
+Calculate sales (positive) and unfulfilled demand penalties (negative) for demand.
 """
-function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame, arrivals::DataFrame)
+function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame, orders_grp1::GroupedDataFrame)
     s, p = 0, 0 #sales and penalties
-    sales_price = get_prop(x.network, n, req, :sales_price)[mat]
-    dmnd_penalty = get_prop(x.network, n, req, :unfulfilled_penalty)[mat]
+    arc = req == :market ? (n,) : (n,req)
+    sales_price = get_prop(x.network, arc..., :sales_price)[mat]
+    dmnd_penalty = get_prop(x.network, arc..., :unfulfilled_penalty)[mat]
     key = (arc = (n,req), material = mat)
-    if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp)
-        delivered = filter([:arc, :material] => (a, m) -> a == (n,req) && m == mat, arrivals, view=true).amount
-        sold = !isempty(delivered) ? delivered[1] : 0
-        unfilled = sales_grp[key].unfulfilled[1]
-        s += sales_price * sold
-        p -= dmnd_penalty * unfilled
-    end
-
-    return s, p
-end
-
-"""
-    sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame)
-
-Calculate sales (positive) and unfulfilled demand penalties (negative) for external demand.
-"""
-function sales_and_penalties(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, sales_grp::GroupedDataFrame)
-    s, p = 0, 0 #sales and penalties
-    sales_price = get_prop(x.network, n, :sales_price)[mat]
-    dmnd_penalty = get_prop(x.network, n, :unfulfilled_penalty)[mat]
-    key = (arc = (n,:market), material = mat)
-    if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp)
-        sold, unfilled = sales_grp[key][1, [:fulfilled, :unfulfilled]]
+    if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp1)
+        sold = sum(filter(:sent => t != :lost_sale, sales_grp1[key], view=true).amount; init=0)
+        if key in keys(orders_grp1)
+            unfilled = orders_grp1[key].amount[1]
+        else
+            unfilled = sum(filter(:sent => t == :lost_sale, sales_grp1[key], view=true).amount; init=0)
+        end
         s += sales_price * sold
         p -= dmnd_penalty * unfilled
     end
