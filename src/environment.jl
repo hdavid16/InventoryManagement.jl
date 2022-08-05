@@ -279,6 +279,8 @@ function create_temp_placeholders(net::MetaDiGraph, echelons::Dict)
             ech_stk = sum([m in keys(i0[n]) ? i0[n][m] : 0 for n1 in echelons[n]]) #sum downstream inventories for that material
             tmp[n,m,:echelon] = ech_stk
             tmp[n,m,:on_hand] = i0[n][m]
+            tmp[n,m,:position] = i0[n][m]
+            tmp[n,m,:level] = i0[n][m]
             tmp[n,m,:discarded] = 0
             for dst in outneighbors(net,n)
                 tmp[(n,dst),m,:pipeline] = 0

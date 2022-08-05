@@ -49,10 +49,8 @@ function update_inventories!(x::SupplyChainEnv)
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network)
         for mat in get_prop(x.network, n, :node_materials) #loop through materials that can be stored at that node #x.materials
-            ilevel, ipos = inventory_components(x, n, mat, orders_grp)
-            push!(x.inventory_level, [x.period, n, mat, ilevel]) #update inventory level
-            push!(x.inventory_position, [x.period, n, mat, ipos]) #update inventory position
-            update_echelons!(x, n, mat, ipos) #update echelon stocks
+            inventory_components(x, n, mat, orders_grp)
+            update_echelons!(x, n, mat) #update echelon stocks
         end
     end
 
@@ -114,18 +112,19 @@ function inventory_components(
     iorder = pipeline + backorder #inventory on order
     ipos = ilevel + iorder #inventory position
 
-    return ilevel, ipos
+    x.tmp[n,mat,:level] = ilevel
+    x.tmp[n,mat,:position] = ipos
 end
 
 """
-    update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, ipos::Float64)
+    update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
 
 Update echelon stocks for current time period.
 """
-function update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, ipos::Float64)
+function update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
     for ech in findall(i -> n in i, x.echelons) #identify which echelons have been affected and add to these
         if mat in get_prop(x.network, ech, :node_materials) #only add to echelon if that node holds that material
-            x.tmp[ech,mat,:echelon] += ipos
+            x.tmp[ech,mat,:echelon] += x.tmp[n,mat,:position]
         end
     end
 end
@@ -135,6 +134,8 @@ function update_dfs!(x::SupplyChainEnv)
         for m in get_prop(x.network, n, :node_materials)
             #add rows to dfs
             push!(x.inventory_on_hand, (x.period, n, m, x.tmp[n,m,:on_hand], x.tmp[n,m,:discarded]))
+            push!(x.inventory_level, (x.period, n, m, x.tmp[n,m,:level]))
+            push!(x.inventory_position, (x.period, n, m, x.tmp[n,m,:position]))
             push!(x.echelon_stock, (x.period, n, m, x.tmp[n,m,:echelon]))
             for dst in outneighbors(x.network, n)
                 arc = (n,dst)
