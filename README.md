@@ -74,18 +74,18 @@ pkg> add https://github.com/hdavid16/InventoryManagement.jl
 
 The sequence of events in each period of the simulation is patterned after that of the [News Vendor Problem](https://optimization.cbe.cornell.edu/index.php?title=Newsvendor_problem):
 1. Start period.
-2. Place inventory replenishment orders at each node by traversing the supply network downstream (using [topological sorting](https://en.wikipedia.org/wiki/Topological_sorting)).
+2. Receive any incoming shipments from upstream nodes.
+3. Place inventory replenishment orders at each node by traversing the supply network downstream (using [topological sorting](https://en.wikipedia.org/wiki/Topological_sorting)).
   - If `backlog = true`, the previous period's backlog is added to the replenishment order. 
-  - The supplier to the node placing the order will attempt to fill the replenishment order via its on-hand inventory if possible. If the supplier is a `producer` node and its on-hand inventory is insufficient, the supplier will then attempt to fulfill the order via material production (if there is sufficient `production capacity` and `raw material inventory`). 
+  - Each supplier attempts to fulfill downstream orders via its on-hand inventory. `Producer` nodes fulfill production requests via material production (if there is sufficient `production capacity` and `raw material inventory`). 
   - If `reallocate = true`, then any amount that cannot be satisfied is reallocated to the next supplier in the `supplier priority` list (the lowest priority supplier will reallocate back to the highest priority supplier). 
   - Accepted replenishment orders are immediately shipped with a lead time sampled from the specified distribution. For `distributor` nodes, the lead time is the in-transit (transportation) time between `distributor` nodes. For `producer` nodes, the lead time is the plant production time. 
   - If the lead time is 0, the stock will be immediately available to the requesting node so that it can be used to fulfill downstream orders as they arrive (possible due to the topological sorting).
-4. Receive inventory that has arrived at each node (after the lead time has transpired).
-5. Market demand for each material occurs after tossing a weighted coin with the probability of demand occurring defined by the inverse of the `demand_period` (average number of periods between positive external demands).
-  - For example, if `demand_period = 2`, there is a `1/2 = 50%` chance of having positive demand, or once every 2 days on average.
-8. Demand (including any backlog if `backlog = true`) is fulfilled up to available inventory at the `market` nodes.
-9. Unfulfilled demand is backlogged (if `backlog = true`).
-10. Accounts for each node are generated:
+4. Market (external) demand for each material occurs after tossing a weighted coin with the probability of demand occurring defined by the `demand_frequency` (likelihood of demand occuring in each period; inverse of the average number of periods between positive external demands).
+  - For example, if `demand_requency = 0.5`, there is a `50%` chance of having positive demand, or once every 2 days on average.
+5. Demand (including any backlog if `backlog = true`) is fulfilled up to available inventory at the `market` nodes. Make-to-order nodes trigger production requests.
+6. Unfulfilled demand is backlogged (if `backlog = true`).
+7. Accounts for each node are generated:
   - Accounts payable: invoice for fulfilled replenishment orders (payable to suppliers), invoice for delivered replenishment orders (payable to third-party shipper), pipeline inventory holding cost for in-transit inventory (cost to requestor), on-hand inventory holding cost, penalties for unfulfilled demand (cost to supplier).
   - Accounts receivable: sales for internal and external demand.
 
@@ -235,17 +235,13 @@ This function takes the following inputs:
 ## Simulation Outputs
 
 The `SupplyChainEnv` Constructor has the following fields to store the simulation results in `DataFrames`:
-- `inventory_on_hand`: on-hand inventory for each `node`, `material`, and `period`. Discarded inventory is marked when `capacitated_inventory = true`
-- `inventory_level`: inventory level for each `node`, `material`, and `period`
-- `inventory_pipeline`: in-transit inventory for each `arc`, `material`, and `period`
-- `inventory_position`: inventory position for each `node`, `material`, and `period`
-- `echelon_stock`: inventory position for each `echelon`, `material`, and `period`
-- `demand`: internal and external demands for each `material` on each `arc` (for internal demand) and each `node` (for external demand), at each `period`. The total demand quantities, fulfilled demand quantities, lead times and unfulfilled demand quantities are tabulated. If `reallocate = true` and the unfulfilled demand is reallocated, the `arc` that the demand is reallocated to is also indicated.
-- `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. The `fulfilled` column has a vector of `Tuples` that indicate the fulfillment time, supplier, and amount fulfilled. More than one `Tuple` will be shown if the order has been split.
+- `inventory`: on-hand, level, position, echelon, pipeline, and discarded inventory for each `location` (`arc` or `node`), `material`, and `period`. Discarded inventory is marked when `capacitated_inventory = true`.
+- `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. 
 - `open_orders`: open (not yet fulfilled) internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each open order. The `due` column indicates the time left until the order is due (as specified by the `service_lead_time`).
+- `fulfillments`: order fulfillment quantities for each order ID. The `type` column indicates if the amount on that row is material `sent`, `delivered`, or is a `lost sale`.
 - `shipments`: current in-transit inventory for each `arc` and `material` with remaining lead time.
 - `profit`: time-discounted profit for each `node` at each `period`.
-- `metrics`: service metrics (service level and fillrate) for each `supplier` and `material`.
+- `metrics`: service metrics (service level and fillrate) on each `arc` for each `material`.
 
 ## Examples
 
