@@ -1,8 +1,9 @@
 """
-    calculate_service_measures!(env::SupplyChainEnv)
+    calculate_service_measures!(env::SupplyChainEnv; window::Tuple=(0,Inf))
     calculate_service_measures(orders_df::DataFrame, fulfillments_df::DataFrame)
 
 Calculate mean service level and fill rate along each arc and for each material in the simulation.
+    `window` sets the window of periods to apply in the service measure calculation.
 
 NOTE:
 - If reallocation occurs, any fulfilled reallocated order is not counted
@@ -13,8 +14,8 @@ function calculate_service_measures(orders_df::AbstractDataFrame, fulfillments_d
     due_dict = Dict(orders_df.id .=> orders_df.due)
     @chain fulfillments_df begin
         @rsubset(
-            :delivered <= due_dict[:id], #remove any late fulfillments
-            :sent != Symbol("lost_sale"), #remove any lost sales
+            :type == Symbol("delivered"), #only keep deliveries
+            :period <= due_dict[:id], #remove any late fulfillments
             view = true
         )
         groupby([:id,:material,:arc])
@@ -32,13 +33,15 @@ function calculate_service_measures(orders_df::AbstractDataFrame, fulfillments_d
         )
     end
 end
-function calculate_service_measures!(env::SupplyChainEnv; window::Tuple)
+function calculate_service_measures!(env::SupplyChainEnv; window::Tuple=(0,Inf))
+    @assert window[1] <= window[2] "`window` is not valid (lb > ub)."
+    @assert window[1] <= env.period "Service measure window outside of simulation."
     if window == (0,Inf)
         orders_df = env.orders
         fulfillments_df = env.fulfillments
     else
-        orders_df = filter(:created => t -> window[1] <= t <= window[2], env.orders, view = true)
-        fulfillments_df = filter(:id => in(Set(orders_df.id)), env.fulfillments, view=true)
+        orders_df = subset(env.orders, :created => t -> window[1] <= t <= window[2], view = true)
+        fulfillments_df = subset(env.fulfillments, :id => in(Set(orders_df.id)), view=true)
     end
     env.metrics = calculate_service_measures(orders_df, fulfillments_df)
 end

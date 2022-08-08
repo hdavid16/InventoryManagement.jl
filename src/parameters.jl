@@ -55,11 +55,11 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
         elseif key == :make_to_order
             check_make_to_order!(network, obj)
         else
-            !in(key, keys(props(network, obj...))) && set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
+            !(key in keys(props(network, obj...))) && set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
             param_dict = get_prop(network, obj..., key) #parameter dictionary
             for mat in mats
                 #set defaults
-                if !in(mat, keys(param_dict)) #if material not specified, add it to the dict and set default values
+                if !(mat in keys(param_dict)) #if material not specified, add it to the dict and set default values
                     param_dict = set_default!(network, key, obj, mat)
                 end
                 #check parameter value is valid
@@ -175,7 +175,7 @@ end
 Check list of make to order materials at plant `n`.
 """
 function check_make_to_order!(network::MetaDiGraph, n::Int)
-    if !in(:make_to_order, keys(props(network,n)))
+    if !(:make_to_order in keys(props(network,n)))
         set_prop!(network, n, :make_to_order, []) #default is no make to order materials
     else
         mto = get_prop(network, n, :make_to_order)
@@ -297,8 +297,8 @@ This improves performance for simulations with many materials. Sort in materials
 function store_node_materials!(network::MetaDiGraph, plants::Vector)
     materials = get_prop(network, :materials)
     for n in vertices(network)
-        n_cap = filter( #get nonzero inventory capacities
-            i -> !iszero(i[2]),    
+        n_cap = filter(#get nonzero inventory capacities
+            !iszero ∘ last,  
             get_prop(network, n, :inventory_capacity)
         )
         n_mats = collect(keys(n_cap)) ∩ materials
