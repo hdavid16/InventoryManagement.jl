@@ -8,18 +8,22 @@ Calculate profit at each node in the network
 """
 function calculate_profit!(x::SupplyChainEnv)
     #filter data
-    sales_df1 = @rsubset(x.fulfillments, #delivered orders + lost sales
-        :period == x.period, 
-        :type in Set([Symbol("delivered"),Symbol("lost_sale")]), 
-        view=true
-    )
-    orders_df1 = @rsubset(x.open_orders,  #backlogged order quantities
-        :id in Set(sales_df1.id), 
-        :due <= 0, 
-        view=true
-    )
-    sales_grp1 = groupby(sales_df1, [:arc, :material]) 
-    orders_grp1 = groupby(orders_df1, [:arc, :material])
+    sales_grp1 = @chain x.fulfillments begin
+        @rsubset( #delivered orders + lost sales
+            :period == x.period, 
+            :type in Set([Symbol("delivered"),Symbol("lost_sale")]), 
+            view=true
+        ) 
+        groupby([:arc, :material])
+    end
+    orders_grp1 = @chain x.open_orders begin
+        @rsubset( #backlogged order quantities
+            :id in Set(sales_df1.id), 
+            :due <= 0, 
+            view=true
+        )
+        groupby([:arc, :material])
+    end
 
     #evaluate node profit
     for n in vertices(x.network)

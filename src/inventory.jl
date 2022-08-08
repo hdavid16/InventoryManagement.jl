@@ -43,8 +43,10 @@ Update inventory position and inventory level for all materials and nodes.
 function update_inventories!(x::SupplyChainEnv)
     #filter data
     due_by = x.options[:adjusted_stock] ? Inf : 0 #Inf means that all orders placed are counted (even if not due); otherwise, only due orders are counted
-    orders_df = @rsubset(x.open_orders, :due <= due_by, view=true) #orders to count in backlogging
-    orders_grp = groupby(orders_df, [:arc, :material]) #group by arc and material
+    orders_grp = @chain x.open_orders begin
+        @rsubset(:due <= due_by, view=true) #orders to count in backlogging 
+        groupby([:arc, :material])
+    end
     
     #loop through nodes and update inventory levels, positions, and echelons
     for n in vertices(x.network)
