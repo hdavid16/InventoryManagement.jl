@@ -6,11 +6,19 @@ Calculate profit at each node in the network
 
 [Bug] NOTE: 0 lead time arrivals are not included in `arrivals` (These are updated when the shipment is created)
 """
-function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
+function calculate_profit!(x::SupplyChainEnv)
     #filter data
-    sales_df1 = filter(:delivered => t -> t == x.period, x.fulfillments, view=true) #delivered orders + lost sales
-    sales_grp1 = groupby(sales_df1, [:arc, :material])
-    orders_df1 = filter([:id,:due] => (id,due) -> id in sales_df.id && due <= 0, x.open_orders, view=true) #backlogged order quantities
+    sales_df1 = @rsubset(x.fulfillments, #delivered orders + lost sales
+        :period == x.period, 
+        :type in Set([Symbol("delivered"),Symbol("lost_sale")]), 
+        view=true
+    )
+    orders_df1 = @rsubset(x.open_orders,  #backlogged order quantities
+        :id in Set(sales_df1.id), 
+        :due <= 0, 
+        view=true
+    )
+    sales_grp1 = groupby(sales_df1, [:arc, :material]) 
     orders_grp1 = groupby(orders_df1, [:arc, :material])
 
     #evaluate node profit
@@ -25,7 +33,7 @@ function calculate_profit!(x::SupplyChainEnv, arrivals::DataFrame)
             end
             #pay suppliers for received inventory and pay transportation/production cost
             for sup in inneighbors(x.network, n)
-                profit += purchases_and_pipeline_costs(x, sup, n, mat, arrivals)
+                profit += purchases_and_pipeline_costs(x, sup, n, mat, sales_grp1)
             end
             #receive payment for delivered inventory and pay unfulfilled demand penalties
             for req in outneighbors(x.network, n)
@@ -69,11 +77,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, 
     dmnd_penalty = get_prop(x.network, arc..., :unfulfilled_penalty)[mat]
     key = (arc = (n,req), material = mat)
     if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp1)
-        sold = sum(filter(:sent => t != :lost_sale, sales_grp1[key], view=true).amount; init=0)
+        sold = sum(@rsubset(sales_grp1[key], :type != Symbol("lost_sale"), view=true).amount; init=0)
         if key in keys(orders_grp1)
             unfilled = orders_grp1[key].amount[1]
         else
-            unfilled = sum(filter(:sent => t == :lost_sale, sales_grp1[key], view=true).amount; init=0)
+            unfilled = sum(@rsubset(sales_grp1[key], :type == Symbol("lost_sale"), view=true).amount; init=0)
         end
         s += sales_price * sold
         p -= dmnd_penalty * unfilled
@@ -83,21 +91,20 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, 
 end
 
 """
-    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame)
+    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame)
 
 Calculate payments to suppliers and transportation costs (fixed and variable) (negative).
 """
-function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, arrivals::DataFrame)
+function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame)
     price = get_prop(x.network, sup, n, :sales_price)[mat]
     trans_cost = get_prop(x.network, sup, n, :transportation_cost)[mat]
     pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]
     ap = 0 #accounts payable
-    if price > 0 || trans_cost > 0 #pay purchase of inventory and transportation cost (assume it is paid to a third party)
-        purchased = filter([:arc, :material] => (j1, j2) -> j1 == (sup, n) && j2 == mat, arrivals, view=true).amount
-        if !isempty(purchased)
-            ap -= purchased[1] * price
-            ap -= purchased[1] * trans_cost
-        end
+    key = (arc = (sup,n), material = mat)
+    if price > 0 || trans_cost > 0 && key in keys(sales_grp1) #pay purchase of inventory and transportation cost (assume it is paid to a third party)
+        purchased = sum(@rsubset(sales_grp1[key], :type != Symbol("lost_sale"), view=true).amount; init=0)
+        ap -= purchased * price
+        ap -= purchased * trans_cost
     end
     if pipe_holding_cost > 0 #pay pipeline holding cost (paid for in-transit inventory in the current period)
         intransit = x.tmp[(sup,n),mat,:pipeline]
