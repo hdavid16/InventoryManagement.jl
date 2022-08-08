@@ -35,10 +35,10 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     x.shipments.lead .-= 1
     #decrease time until due date for active orders by one period
     x.open_orders.due .-= 1
+    #receive incoming orders
+    update_shipments!(x)
     #place requests
     place_orders!(x, act)
-    #update on hand and pipeline inventories due to arrived shipments
-    arrivals = update_shipments!(x)
     #discard any excess inventory
     x.options[:capacitated_inventory] && enforce_inventory_limits!(x)
     #markets open and demand occurs
@@ -47,7 +47,11 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     update_inventories!(x)
     #calculate profit at each node
     if x.options[:evaluate_profit]
-        calculate_profit!(x, arrivals)
-        x.reward = sum(filter(:period => j -> j == x.period, x.profit, view=true).value) #update reward (current profit). NOTE: is this ok for RL?
+        calculate_profit!(x)
+        x.reward = @chain x.profit begin
+            @rsubset(:period == x.period)
+            sum(_.value; init=0)
+        end
+        x.reward = sum(@rsubset(x.profit, :period == x.period, view=true).value) #update reward (current profit). NOTE: is this ok for RL?
     end
 end
