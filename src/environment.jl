@@ -201,15 +201,16 @@ function create_logging_dfs(net::MetaDiGraph, tmp::Dict)
     #order fulfillments
     fulfillments = DataFrame(
         id = Int[],
-        sent = Int[],
-        delivered = Int[],
+        period = Int[],
         arc = Tuple[],
         material = Any[],
-        amount = Any[]
+        amount = Any[],
+        type = Symbol[]
     )
 
     #material shipments
     shipments = DataFrame(
+        id = Int[],
         arc = Tuple[],
         material = Any[],
         amount = Real[],
