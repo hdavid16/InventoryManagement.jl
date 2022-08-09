@@ -4,7 +4,8 @@ authors = ["hdavid16 <hperez16@gmail.com> and contributors"]
 version = "0.5.2"
 
 [deps]
-DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
+Chain = "8be319e6-bccf-4806-a6f7-6fae938471bc"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
 IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
@@ -17,6 +18,8 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
+Chain = "0.5"
+DataFrames = "1.3"
 Distributions = "0.25"
 Graphs = "1.7"
 IntervalSets = "0.7"
