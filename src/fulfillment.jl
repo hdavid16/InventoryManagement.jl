@@ -1,53 +1,54 @@
 """
     fulfill_from_stock!(
-        x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
-        lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
+        x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, 
+        mat::Union{Symbol,String}, lead::Real
     )
 
 Fulfill request from on-hand inventory.
 """
 function fulfill_from_stock!(
-    x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
-    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{Missing,GroupedDataFrame}
+    x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, 
+    mat::Union{Symbol,String}, lead::Int
 )
-    #available supply
-    supply = supply_grp[(node = src, material = mat)].level[1]
-
     #check if partial fulfillment is allowed
     partial_fulfillment = check_fulfillment_type(x.network, src, dst, mat)
     
     #loop through orders on relevant arc
     orders_df = relevant_orders(x, src, dst, mat)
     for row in eachrow(orders_df)
-        order_amount = row.quantity
+        supply = x.tmp[src,mat,:on_hand] #available supply
+        order_amount = row.amount
         accepted_inv = accepted_from_stock(order_amount, supply, partial_fulfillment)
         if accepted_inv > 0
-            row.quantity -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
-            push!(x.fulfillments, (row.id, x.period, mat, src, accepted_inv)) #update order fulfillments log (date, supplier, amount fulfilled)
-            push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_inv, lead, 0, missing]) #log demand
-            supply_grp[(node = src, material = mat)].level[1] -= accepted_inv #remove inventory from site
-            dst != :market && make_shipment!(x, src, dst, mat, accepted_inv, lead, supply_grp, pipeline_grp) #ship material (unless it is external demand)
+            row.amount -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
+            x.tmp[src,mat,:on_hand] -= accepted_inv #remove inventory from site
+            push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :sent)) #log order as sent
+            if dst == :market
+                push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :delivered)) #log order as delivered
+            else
+                make_shipment!(x, row.id, src, dst, mat, accepted_inv, lead) #ship material (unless it is external demand)
+            end
         end
-        if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled log it as unfulfilled & try to reallocate
-            log_unfulfilled_demand!(x, row, accepted_inv)
+        if x.options[:reallocate] #try to reallocate unfulfilled order if reallocation allowed
+            reallocate_demand!(x, row)
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = filter(:quantity => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
-    filter!(:id => id -> !in(id, fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
+    fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
+    filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders
 end
 
 """
     fulfill_from_production!(
         x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
-        lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{GroupedDataFrame,Missing}, capacities::Dict
+        lead::Real, capacities::Dict
     )
 
 Fulfill request by scheduling material production.
 """
 function fulfill_from_production!(
     x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
-    lead::Float64, supply_grp::GroupedDataFrame, pipeline_grp::Union{GroupedDataFrame,Missing}, capacities::Dict
+    lead::Int, capacities::Dict
 )
 
     #check if partial fulfillment is allowed
@@ -55,38 +56,38 @@ function fulfill_from_production!(
 
     #extract info
     bom = get_prop(x.network, src, :bill_of_materials)
-    rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
-    cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
+    rmat_names = names(filter(<(0), bom[:,mat]), 1) #names of raw materials
+    cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of co-products
 
-    #get relevant orders on that arc & raw material orders (:production)
+    #get relevant orders on that arc & raw material orders (:consumption)
     orders_df = relevant_orders(x, src, dst, mat) #NOTE: Assume that if plant requests production, it will accept early fulfillment
     raw_orders_grp = raw_material_orders(x, orders_df.id, rmat_names)
     #loop through orders on relevant arc
     for row in eachrow(orders_df)
-        cap_and_sup = get_capacity_and_supply(src, mat, bom, rmat_names, cmat_names, capacities, supply_grp)
-        order_amount = row.quantity #amount requested in order
+        cap_and_sup = get_capacity_and_supply(x, src, mat, bom, rmat_names, cmat_names, capacities)
+        order_amount = row.amount #amount requested in order
         accepted_prod = accepted_production(order_amount, cap_and_sup, partial_fulfillment) #amount accepted
         if accepted_prod > 0
             #fulfill order (may be partial)
-            row.quantity -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
+            row.amount -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
             #consume reactant
             for rmat in rmat_names
-                consume_reactant!(x, row.id, src, rmat, bom[rmat,mat], order_amount, accepted_prod, lead, supply_grp, raw_orders_grp) 
+                consume_reactant!(x, row.id, src, rmat, bom[rmat,mat], accepted_prod, lead, raw_orders_grp) 
             end
             #schedule coproduction
             for cmat in cmat_names
-                co_production!(x, src, dst, cmat, bom[cmat,mat], accepted_prod, lead, supply_grp, pipeline_grp, capacities)
+                co_production!(x, row.id, src, dst, cmat, bom[cmat,mat], accepted_prod, lead, capacities)
             end
             #schedule production
-            production!(x, row.id, src, dst, mat, order_amount, accepted_prod, lead, supply_grp, pipeline_grp, capacities)
+            production!(x, row.id, src, dst, mat, accepted_prod, lead, capacities)
         end
-        if row.quantity > 0 && row.due <= 0 #if some amount of the order is due and wasn't fulfilled, log it as unfulfilled & try to reallocate it
-            log_unfulfilled_demand!(x, row, accepted_prod)
+        if x.options[:reallocate] #try to reallocate unfulfilled order if reallocation allowed
+            reallocate_demand!(x, row)
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = filter(:quantity => q -> q <= 0, orders_df, view=true).id #find fulfilled orders
-    filter!(:id => id -> !in(id, fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
+    fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
+    filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
 end
 
 """
@@ -131,68 +132,61 @@ function accepted_production(order_amount, cap_and_sup, partial_fulfillment)
 end
 
 """
-    consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, order_amount, accepted_prod, lead, supply_grp, raw_orders_grp)
+    consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, accepted_prod, lead, raw_orders_grp)
 
 Consume reactant `rmat` and update inventory and orders.
 """
-function consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, order_amount, accepted_prod, lead, supply_grp, raw_orders_grp)
+function consume_reactant!(x::SupplyChainEnv, order_id, src, rmat, stoich, accepted_prod, lead, raw_orders_grp)
     consumed = accepted_prod * stoich #negative number
-    supply_grp[(node = src, material = rmat)].level[1] += consumed
-    raw_orders_grp[(id = order_id, material = rmat)].quantity[1] += consumed
-    push!(x.fulfillments, (order_id, x.period, rmat, src, -consumed)) #update order fulfillments (date, supplier, and amount fulfilled)
-    push!(x.demand, [x.period, (src,:production), rmat, -order_amount*stoich, -consumed, lead, 0, missing]) #log demand
+    x.tmp[src,rmat,:on_hand] += consumed
+    raw_orders_grp[(id = order_id, material = rmat)].amount[1] += consumed
+    push!(x.fulfillments, (order_id, x.period, (src,:consumption), rmat, -consumed, :sent)) #raw material is consumed ("sent")
 end
 
 """
-    co_production!(x::SupplyChainEnv, src, dst, cmat, stoich, accepted_prod, lead, supply_grp, pipeline_grp, capacities)
+    co_production!(x::SupplyChainEnv, order_id, src, dst, cmat, stoich, accepted_prod, lead, capacities)
 
 Produce coproduct `cmat` and update inventory and shipments
 """
-function co_production!(x::SupplyChainEnv, src, dst, cmat, stoich, accepted_prod, lead, supply_grp, pipeline_grp, capacities)
+function co_production!(x::SupplyChainEnv, order_id, src, dst, cmat, stoich, accepted_prod, lead, capacities)
     coproduction = accepted_prod*stoich
     capacities[cmat] -= coproduction #update coproduct production capacity
-    push!(x.demand, [x.period, (src,dst), cmat, 0, coproduction, lead, 0, missing]) #log demand
-    if dst == :market && iszero(lead) #only triggered if make-to-order & has 0 production lead time
-        supply_grp[(node = src, material = cmat)].level[1] += coproduction
-    else
-        make_shipment!(x, src, dst, cmat, coproduction, lead, supply_grp, pipeline_grp) #schedule shipment of co-product (original order amount is 0 since this is a coproduct)
-    end
+    push!(x.fulfillments, (order_id, x.period, (src,:coproduction), cmat, coproduction, :sent))
+    make_shipment!(x, order_id, src, src, cmat, coproduction, lead) #schedule shipment of co-product 
 end
 
 """
-    production!(x::SupplyChainEnv, src, dst, mat, order_amount, accepted_prod, lead, supply_grp, pipeline_grp, capacities)
+    production!(x::SupplyChainEnv, src, dst, mat, accepted_prod, lead, capacities)
 
 Produce material `mat` and create shipments and update fulfillments/demand tables.
 """
-function production!(x::SupplyChainEnv, order_id, src, dst, mat, order_amount, accepted_prod, lead, supply_grp, pipeline_grp, capacities)
+function production!(x::SupplyChainEnv, order_id, src, dst, mat, accepted_prod, lead, capacities)
     capacities[mat] -= accepted_prod #update production capacity to account for commited capacity (handled first come first serve)
-    push!(x.fulfillments, (order_id, x.period, mat, src, accepted_prod)) #update order fulfillments (date, supplier, and amount fulfilled)
-    push!(x.demand, [x.period, (src,dst), mat, order_amount, accepted_prod, lead, 0, missing]) #log demand
-    dst != :market && make_shipment!(x, src, dst, mat, accepted_prod, lead, supply_grp, pipeline_grp) 
+    push!(x.fulfillments, (order_id, x.period, (src,dst), mat, accepted_prod, :sent)) #update fulfillment log
+    make_shipment!(x, order_id, src, dst, mat, accepted_prod, lead) 
 end
 
 """
     make_shipment!(
-        x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
-        accepted_amount::Float64, lead::Float64, 
-        supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame
+        x::SupplyChainEnv, order_id::Int,
+        src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
+        accepted_amount::Float64, lead::Float64
     )
 
 Schedule shipment of material.
 """
 function make_shipment!(
-    x::SupplyChainEnv, src::Int, dst::Int, mat::Union{Symbol,String}, 
-    accepted_amount::Float64, lead::Float64, 
-    supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame
+    x::SupplyChainEnv, order_id::Int,
+    src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}, 
+    accepted_amount::Float64, lead::Int
 )
     #add inventory to pipeline
-    a = (src, dst)
-    pipeline_grp[(arc = a, material = mat)].level[1] += accepted_amount 
-    if iszero(lead) #if zero leadtime, update shipments so that it is immediately available for fulfilling downstream orders
-        shipment_completed!(x, accepted_amount, a, mat, supply_grp, pipeline_grp)
-    else #otherwise, log the shipment
-        push!(x.shipments, [a, mat, accepted_amount, lead])
+    a = (src,dst)
+    if dst != :market #don't add if market order
+        x.tmp[a,mat,:pipeline] += accepted_amount
     end
+    push!(x.shipments, [order_id, a, mat, accepted_amount, lead]) #log the shipment
+    iszero(lead) && update_shipments!(x) #if leadtime is zero, update shipments immediately
 end
 
 """
@@ -201,43 +195,36 @@ end
 Update inventories throughout the network for arrived shipments.
 """
 function update_shipments!(x::SupplyChainEnv)
-    #filter data
-    #get on hand inventory
-    supply_df = filter(:period => k -> k == x.period, x.inventory_on_hand, view=true) #on_hand inventory supply
-    supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
-    #get pipeline inventory
-    pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
-    pipeline_grp = groupby(pipeline_df, [:arc, :material])
-
     #find active shipments with 0 lead time
-    arrivals = filter(:lead => i -> i <= 0, x.shipments) 
+    arrivals = filter(:lead => <=(0), x.shipments, view=true) 
     for i in 1:nrow(arrivals)
-        a, mat, amount = arrivals[i, [:arc, :material, :amount]]
+        id, a, mat, amount = arrivals[i, [:id, :arc, :material, :amount]]
         #update inventories and capacities
-        shipment_completed!(x, amount, a, mat, supply_grp, pipeline_grp)
+        shipment_completed!(x, id, amount, a, mat)
     end
-    filter!(:lead => i -> i > 0, x.shipments) #remove shipments that arrived (and any zero values)
-    
-    return arrivals
+    filter!(:lead => >(0), x.shipments) #remove shipments that arrived (and any zero values)
 end
 
 """
-    shipment_completed!(x::SupplyChainEnv, amount::Float64, arc::Tuple, mat::Union{Symbol,String}, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame)
+    shipment_completed!(x::SupplyChainEnv, order_id::Int, amount::Float64, arc::Tuple, mat::Union{Symbol,String})
 
 Update downstream inventory and pipeline inventory for completed shipment, and update production capacities for completed production.
 """
-function shipment_completed!(x::SupplyChainEnv, amount::Float64, arc::Tuple, mat::Union{Symbol,String}, supply_grp::GroupedDataFrame, pipeline_grp::GroupedDataFrame)
+function shipment_completed!(x::SupplyChainEnv, order_id::Int, amount::Float64, arc::Tuple, mat::Union{Symbol,String})
     #update downstream inventory and pipeline inventory
-    supply_grp[(node = arc[end], material = mat)].level[1] += amount
-    pipeline_grp[(arc = arc, material = mat)].level[1] -= amount
+    if arc[end] != :market
+        x.tmp[arc[end],mat,:on_hand] += amount
+        x.tmp[arc,mat,:pipeline] -= amount
+    end
+    push!(x.fulfillments, (order_id, x.period, arc, mat, amount, :delivered))
     #restore production capacities (production has concluded)
-    if arc[1] == arc[2]
+    if arc[1] == arc[2] || arc[2] == :market
         #restore mat production capacity
         capacity = get_prop(x.network, arc[1], :production_capacity)
         capacity[mat] += amount
         #restore any co-product production capacity
         bom = get_prop(x.network, arc[1], :bill_of_materials)
-        cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
+        cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of co-products
         for cmat in cmat_names
             capacity[cmat] += amount*bom[cmat,mat]
         end

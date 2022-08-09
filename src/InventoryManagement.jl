@@ -1,7 +1,7 @@
 module InventoryManagement
 
 using DataFrames, NamedArrays, SparseArrays
-using Reexport
+using Reexport, Chain
 using Random
 using IntervalSets
 using Distributions
@@ -29,5 +29,6 @@ export reorder_policy, simulate_policy!
 export connect_nodes!
 export update_stochastic_parameter!
 export isproduced, isconsumed, material_graph
+export calculate_service_measures!
 
 end

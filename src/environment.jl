@@ -9,12 +9,8 @@ abstract type AbstractEnv end
 - `producers::Vector`: Vector of producer nodes where material transformation occurs.
 - `echelons::Dict`: Dictionary with Vector of nodes downstream of each node in the network (including that node).
 - `materials::Vector`: Vector with the names of all materials in the system.
-- `inventory_on_hand::DataFrame`: Timeseries with on hand inventories @ each node.
-- `inventory_level::DataFrame`: Timeseries with inventory level @ each node (on-hand minus backlog, if backlogging is allowed)
-- `inventory_pipeline::DataFrame`: Timeseries with pipeline inventories on each arc.
-- `inventory_position::DataFrame`: Timeseries with inventory positions @ each node (inventory level + placed replenishments).
-- `echelon_stock::DataFrame`: Timeseries with echelon inventory position @ each node.
-- `demand::DataFrame`: Timeseries with replenishment orders and market demand placed on each arc.
+- `tmp::Dict`: Dictionary storing the current and previous on-hand, pipeline, echelon, discarded inventories for each material at each node.
+- `inventory::DataFrame`: Timeseries with inventories @ each node.
 - `orders::DataFrame`: History of all orders received.
 - `open_orders::DataFrame`: Temporary table with outstanding orders.
 - `fulfillments::DataFrame`: Fulfilment log for system orders.
@@ -41,12 +37,8 @@ mutable struct SupplyChainEnv <: AbstractEnv
     producers::Vector
     echelons::Dict
     materials::Vector
-    inventory_on_hand::DataFrame
-    inventory_level::DataFrame
-    inventory_pipeline::DataFrame
-    inventory_position::DataFrame
-    echelon_stock::DataFrame
-    demand::DataFrame
+    tmp::Dict
+    inventory::DataFrame
     orders::DataFrame
     open_orders::DataFrame
     fulfillments::DataFrame
@@ -85,21 +77,19 @@ function SupplyChainEnv(
     #get model parameters
     nodes = vertices(net) #network nodes
     echelons = Dict(n => identify_echelons(net, n) for n in nodes) #get nodes in each echelon
-    arcs = [(e.src,e.dst) for e in edges(net)] #network edges as Tuples (not Edges)
     mats = get_prop(net, :materials) #materials
     mrkts, plants = identify_nodes(net) #identify nodes 
     #check inputs
-    check_inputs!(net, nodes, arcs, mrkts, plants, mats, num_periods)
+    check_inputs!(net, mrkts, plants)
+    #create current and previous inventory placeholders
+    tmp = create_temp_placeholders(net, echelons)
     #create logging dataframes
-    logging_dfs = create_logging_dfs(net, nodes, arcs, mats, echelons)
+    logging_dfs = create_logging_dfs(net, tmp)
     #initialize other params
     period, reward, num_orders = 0, 0, 0
     num_periods = num_periods
-    if guaranteed_service 
-        backlog = true #override backlog if guaranteed_service
-    end
     options = Dict(
-        :backlog => backlog, 
+        :backlog => guaranteed_service ? true : backlog, #override backlog if guaranteed_service
         :reallocate => reallocate, 
         :evaluate_profit => evaluate_profit,
         :capacitated_inventory => capacitated_inventory,
@@ -113,6 +103,7 @@ function SupplyChainEnv(
         plants, 
         echelons, 
         mats, 
+        tmp,
         logging_dfs...,
         reward, 
         period, 
@@ -153,63 +144,40 @@ is_terminated(env::SupplyChainEnv) = env.period == env.num_periods
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
 
 """
-    create_logging_dfs(net::MetaDiGraph, nodes::Vector, arcs::Vector, mats::Vector, echelons::Dict)
+    create_logging_dfs(net::MetaDiGraph, tmp::Dict)
 
 Create `DataFrames` to log timeseries results.
 """
-function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, mats::Vector, echelons::Dict)
-    #inventory on hand
-    inventory_on_hand = DataFrame(
-        period = Int[], 
-        node = Int[], 
-        material = [], 
-        level = Float64[], 
-        discarded = []
-    )
-    #initialize inventory on hand
-    for n in nodes, p in mats
-        init_inv = get_prop(net, n, :initial_inventory)
-        push!(inventory_on_hand, (0, n, p, init_inv[p], 0))
-    end
+function create_logging_dfs(net::MetaDiGraph, tmp::Dict)
+    nodes = vertices(net) #network nodes
+    arcs = [(src(e),dst(e)) for e in edges(net)] #network edges as Tuples (not Edges)
+    mats = get_prop(net, :materials) #materials
 
-    #pipeline inventory 
-    inventory_pipeline = DataFrame(
-        period = zeros(Int, length(mats)*length(arcs)),
-        arc = repeat(arcs, inner = length(mats)),
-        material = repeat(mats, outer = length(arcs)),
-        level = zeros(length(mats)*length(arcs))
+    #inventory
+    inventory = DataFrame(
+        period = Int[],
+        location = Any[],
+        material = Any[],
+        amount = Real[],
+        type = Symbol[]
     )
 
-    #inventory position and level
-    inventory_position = select(inventory_on_hand, [:period, :node, :material, :level])
-    inventory_level = copy(inventory_position)
-
-    #echenlon inventory position
-    echelon_stock = DataFrame(
-        period = Int[], 
-        node = Int[], 
-        material = [], 
-        level = Float64[]
-    )
-    #initialize echelon stocks with initial inventory positions
-    for n in nodes, p in mats
-        if get_prop(net, n, :inventory_capacity)[p] > 0 #only update if that node can store that material
-            ech_pos = sum(filter([:node, :material] => (i1, i2) -> i1 in echelons[n] && i2 == p, inventory_position).level)
-            push!(echelon_stock, (0, n, p, ech_pos))
+    #initialize inventories (on-hand, position, level, echelon)
+    for n in nodes
+        for p in get_prop(net,n,:node_materials)
+            push!(inventory, (0, n, p, tmp[n,p,:on_hand], :on_hand))
+            push!(inventory, (0, n, p, tmp[n,p,:on_hand], :position))
+            push!(inventory, (0, n, p, tmp[n,p,:on_hand], :level))
+            push!(inventory, (0, n, p, tmp[n,p,:echelon], :echelon))
         end
     end
 
-    #replenishment and customer sales orders
-    demand = DataFrame(
-        period = Int[],
-        arc = Tuple[],
-        material = Any[],
-        quantity = Float64[], 
-        fulfilled = Float64[],
-        lead = Float64[],
-        unfulfilled = Float64[],
-        reallocated = Any[]
-    )
+    #pipeline inventory 
+    for a in arcs
+        for p in get_prop(net,a[1],:node_materials)
+            push!(inventory, (0, a, p, 0, :pipeline))
+        end
+    end
 
     #all system orders
     orders = DataFrame(
@@ -217,45 +185,73 @@ function create_logging_dfs(net::MetaDiGraph, nodes::Base.OneTo, arcs::Vector, m
         created = Int[],
         due = Int[],
         arc = Tuple[],
-        material = [],
-        quantity = []
+        material = Any[],
+        amount = Real[]
     )
 
     #outstanding orders
     open_orders = DataFrame(
         id = Int[],
+        due = Int[],
         arc = Tuple[],
-        material = [],
-        quantity = [],
-        due = []
+        material = Any[],
+        amount = Any[]
     )
 
     #order fulfillments
     fulfillments = DataFrame(
         id = Int[],
-        time = [],
-        material = [],
-        supplier = [],
-        amount = []
+        period = Int[],
+        arc = Tuple[],
+        material = Any[],
+        amount = Any[],
+        type = Symbol[]
     )
 
     #material shipments
     shipments = DataFrame(
-        arc = [],
-        material = [],
-        amount = Float64[],
-        lead = Float64[]
+        id = Int[],
+        arc = Tuple[],
+        material = Any[],
+        amount = Real[],
+        lead = Int[]
     )
 
     #profit
     profit = DataFrame(
         period = Int[],
-        value = Float64[],
+        value = Real[],
         node = Int[]
     )
 
     #metrics
     metrics = DataFrame()
 
-    return inventory_on_hand, inventory_level, inventory_pipeline, inventory_position, echelon_stock, demand, orders, open_orders, fulfillments, shipments, profit, metrics
+    return inventory, orders, open_orders, fulfillments, shipments, profit, metrics
+end
+
+"""
+    create_temp_placeholders(net::MetaDiGraph, echelons::Dict)
+
+Create temporary placeholders to store current and previous on-hand, pipeline, echelon, 
+    and discarded inventory. This will avoid filtering many times during the simulation.
+"""
+function create_temp_placeholders(net::MetaDiGraph, echelons::Dict)
+    tmp = Dict()
+    i0 = Dict(n => get_prop(net, n, :initial_inventory) for n in vertices(net))
+    for n in vertices(net)
+        for m in get_prop(net, n, :node_materials)
+            ech_stk = sum([m in keys(i0[n]) ? i0[n][m] : 0 for n1 in echelons[n]]) #sum downstream inventories for that material
+            tmp[n,m,:echelon] = ech_stk
+            tmp[n,m,:on_hand] = i0[n][m]
+            tmp[n,m,:position] = i0[n][m]
+            tmp[n,m,:level] = i0[n][m]
+            tmp[n,m,:discarded] = 0
+            for dst in outneighbors(net,n)
+                tmp[(n,dst),m,:pipeline] = 0
+            end
+        end
+    end
+
+    return tmp
 end

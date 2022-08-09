@@ -44,12 +44,6 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     check_policy_input!(min_order_qty, supply_nodes, mats, default = 0)
     check_policy_input!(order_multiples, supply_nodes, mats, default = -1) #default is to not apply order multiple requirement
 
-    #filter data for policy
-    state1_df = filter(:period => j -> j == env.period, env.inventory_position, view=true) #inventory position
-    state1_grp = groupby(state1_df, [:node, :material]) #group by node and material
-    state2_df = filter(:period => j -> j == env.period, env.echelon_stock, view=true) #inventory position
-    state2_grp = groupby(state2_df, [:node, :material]) #group by node and material
-
     #initialize action matrix
     action = NamedArray(
         zeros(length(mats), length(arcs)),
@@ -61,7 +55,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
         reorder_point[n,mat] < 0 && continue #if trigger level is negative, skip it
         review_period isa Dict && !isvalid_period(env.period, review_period[n,mat]) && continue #if not a review period, skip
         #review inventory at the node
-        state = get_inventory_state(n, mat, policy_variable, state1_grp, state2_grp)
+        state = get_inventory_state(env, n, mat, policy_variable)
         #if n is a plant, adjust the inventory state of raw materials by that of the expected product orders
         state += get_expected_consumption(env, n, mat, action)
         #check if reorder is triggered & calculate quantity
@@ -99,22 +93,22 @@ check_policy_input!(args...; kwargs...) = nothing
 
 """
     get_inventory_state(
-        n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol},
-        state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
+        env::SupplyChainEnv,
+        n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol}
     )
 
 Check the inventory state at node `n` for material `mat`.
 """
 function get_inventory_state(
-    n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol},
-    state1_grp::GroupedDataFrame, state2_grp::GroupedDataFrame
+    env::SupplyChainEnv,
+    n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol}
 )
     pol_var = policy_variable isa Dict ? policy_variable[n] : policy_variable
     @assert pol_var in [:inventory_position, :echelon_stock] "Policy variable must be either `:inventory_position` or `:echelon_stock`."
     if pol_var == :inventory_position
-        state = state1_grp[(node = n, material = mat)].level[1]
+        state = env.tmp[n,mat,:position]
     elseif pol_var == :echelon_stock
-        state = state2_grp[(node = n, material = mat)].level[1]
+        state = env.tmp[n,mat,:echelon]
     end
 
     return state
@@ -129,7 +123,7 @@ function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol
     consume = 0
     if isconsumed(env, n, mat)
         bom = get_prop(env.network, n, :bill_of_materials)
-        mprods = names(filter(i -> i < 0, bom[mat,:]), 1) #find which products are produced from mat
+        mprods = names(filter(<(0), bom[mat,:]), 1) #find which products are produced from mat
         for mprod in mprods
             ordered = action[mprod, (n, n)] #amount of product ordered
             stoich = bom[mat, mprod] #stoichiometry
@@ -177,16 +171,16 @@ function calculate_reorder(
 end
 
 """
-    simulate_policy!(env::SupplyChainEnv, args...)
+    simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), fulfillment_type::Symbol = :delivered, kwargs...)
 
 Step through a simulation using a specified reorder policy. `args` are the
 arguments that are passed to the `reorder_policy` function.
 """
-function simulate_policy!(env::SupplyChainEnv, args...; kwargs...)
+function simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), fulfillment_type::Symbol = :delivered, kwargs...)
     for _ in 1:env.num_periods
         action = reorder_policy(env, args...; kwargs...)
         (env)(action)
     end
 
-    calculate_service_measures!(env)
+    calculate_service_measures!(env; window, fulfillment_type)
 end

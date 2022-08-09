@@ -117,14 +117,10 @@ This function takes the following inputs:
 ## Simulation Outputs
 
 The `SupplyChainEnv` Constructor has the following fields to store the simulation results in `DataFrames`:
-- `inventory_on_hand`: on-hand inventory for each `node`, `material`, and `period`. Discarded inventory is marked when `capacitated_inventory = true`
-- `inventory_level`: inventory level for each `node`, `material`, and `period`
-- `inventory_pipeline`: in-transit inventory for each `arc`, `material`, and `period`
-- `inventory_position`: inventory position for each `node`, `material`, and `period`
-- `echelon_stock`: inventory position for each `echelon`, `material`, and `period`
-- `demand`: internal and external demands for each `material` on each `arc` (for internal demand) and each `node` (for external demand), at each `period`. The total demand quantities, fulfilled demand quantities, lead times and unfulfilled demand quantities are tabulated. If `reallocate = true` and the unfulfilled demand is reallocated, the `arc` that the demand is reallocated to is also indicated.
-- `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. The `fulfilled` column has a vector of `Tuples` that indicate the fulfillment time, supplier, and amount fulfilled. More than one `Tuple` will be shown if the order has been split.
+- `inventory`: on-hand, level, position, echelon, pipeline, and discarded inventory for each `location` (`arc` or `node`), `material`, and `period`. Discarded inventory is marked when `capacitated_inventory = true`.
+- `orders`: internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each order. 
 - `open_orders`: open (not yet fulfilled) internal and external orders for each `material` on each `arc` (for internal demand) and each `node` (for external demand). The ID, creation date, and quantity are stored for each open order. The `due` column indicates the time left until the order is due (as specified by the `service_lead_time`).
+- `fulfillments`: order fulfillment quantities for each order ID. The `type` column indicates if the amount on that row is material `sent`, `delivered`, or is a `lost sale`.
 - `shipments`: current in-transit inventory for each `arc` and `material` with remaining lead time.
 - `profit`: time-discounted profit for each `node` at each `period`.
-- `metrics`: service metrics (service level and fillrate) for each `supplier` and `material`.
+- `metrics`: service metrics (service level and fillrate) on each `arc` for each `material`.

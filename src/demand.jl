@@ -11,18 +11,12 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     #store original production capacities (to account for commited capacity and commited inventory in next section)
     capacities = Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers)
     #sample lead times and service times
-    leads = Dict((a,mat) => rand(get_prop(x.network, a, :lead_time)[mat]) for a in edges(x.network), mat in mats)
-    servs = Dict((a,mat) => rand(get_prop(x.network, a, :service_lead_time)[mat]) for a in edges(x.network), mat in mats)
+    leads = Dict((a,mat) => ceil(Int,rand(get_prop(x.network, a, :lead_time)[mat])) for a in edges(x.network), mat in mats)
+    servs = Dict((a,mat) => ceil(Int,rand(get_prop(x.network, a, :service_lead_time)[mat])) for a in edges(x.network), mat in mats)
     #identify nodes that can place requests
     nodes = topological_sort(x.network) #sort nodes in topological order so that orders are placed moving down the network
     source_nodes = filter(n -> isempty(inneighbors(x.network, n)), nodes) #source nodes (can't place replenishment orders)
     request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
-    #get on hand inventory
-    supply_df = filter(:period => k -> k == x.period, x.inventory_on_hand, view=true) #on_hand inventory supply
-    supply_grp = groupby(supply_df, [:node, :material]) #group on hand inventory supply
-    #get pipeline inventory
-    pipeline_df = filter(:period => k -> k == x.period, x.inventory_pipeline, view=true)
-    pipeline_grp = groupby(pipeline_df, [:arc, :material])
     #get copy of existing open orders
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
@@ -32,13 +26,13 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
         req_mats = get_prop(x.network, req, :node_materials) #get materials that are compatible with requester node
         for mat in req_mats, sup in sup_priority[mat] #loop by material and supplier priority
             a = (sup, req) #arc
-            lead = float(leads[Edge(a...), mat]) #sampled lead time
-            serv = float(servs[Edge(a...), mat]) #sampled service lead time
+            lead = leads[Edge(a...), mat] #sampled lead time
+            serv = servs[Edge(a...), mat] #sampled service lead time
             amount = act[mat, a] #amount requested
             #continue to next iteration if no request made and no backlog
             if iszero(amount)
                 #determine if there are any open orders for this material on the arc. If not, skip the fulfillment step.
-                pending = calculate_pending([a,(req,:production)], mat, orders_grp) #include any raw material conversion orders (:production)
+                pending = calculate_pending([a,(req,:consumption)], mat, orders_grp) #include any raw material conversion orders (:consumption)
                 if iszero(pending)
                     continue 
                 end
@@ -48,9 +42,9 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
             end
             #try to fulfill request
             if sup == req
-                fulfill_from_production!(x, a..., mat, lead, supply_grp, pipeline_grp, capacities[sup])
+                fulfill_from_production!(x, a..., mat, lead, capacities[sup])
             else
-                fulfill_from_stock!(x, a..., mat, lead, supply_grp, pipeline_grp)
+                fulfill_from_stock!(x, a..., mat, lead)
             end
         end
     end
@@ -72,12 +66,12 @@ end
 Delete expired orders (lost sales).
 """
 function lost_sales!(x::SupplyChainEnv)
-    expired_orders = filter(:due => t -> t <= 0, x.open_orders, view=true)
+    expired_orders = filter(:due => <=(0), x.open_orders, view=true)
     for row in eachrow(expired_orders)
-        push!(x.fulfillments, (row.id, x.period, row.material, row.arc[1], :lost_sale))
+        push!(x.fulfillments, (row.id, x.period, row.arc, row.material, row.amount, :lost_sale))
     end
-    if !isempty(expired_orders)
-        filter!(:due => t -> t > 0, x.open_orders)
+    if !isempty(expired_orders) #remove expired orders if there are any
+        filter!(:due => >(0), x.open_orders)
     end
 end
 
@@ -89,13 +83,19 @@ Create and log order.
 function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Real)
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount]) #update order history
-    push!(x.open_orders, [x.num_orders, (sup,req), mat, amount, service_lead_time]) #add order to temp order df
+    push!(x.open_orders, [x.num_orders, service_lead_time, (sup,req), mat, amount]) #add order to temp order df
+    #create raw material consumption and coproduction orders
     if (sup == req && isproduced(x,sup,mat)) || (req == :market && ismto(x,sup,mat))
         bom = get_prop(x.network, sup, :bill_of_materials)
-        rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
+        rmat_names = names(filter(<(0), bom[:,mat]), 1) #names of raw materials
+        cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names
-            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:production), rmat, -amount*bom[rmat,mat]]) #update order history
-            push!(x.open_orders, [x.num_orders, (sup,:production), rmat, -amount*bom[rmat,mat], service_lead_time])
+            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]]) #update order history
+            push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]])
+        end
+        for cmat in cmat_names
+            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat]]) #update order history
+            push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat]])
         end
     end
 end
@@ -124,73 +124,67 @@ end
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat` with any due date.
 """
-all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}) =
-    filter( 
-        [:arc, :material] => 
-            (a,m) -> 
-                m == mat && #orders for the same material
-                a == (src,dst), #production orders at `n`
-        x.open_orders, 
-        view = true
+function all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    a = (src,dst)
+    subset(x.open_orders,
+        :material => ByRow(==(mat)),
+        :arc => ByRow(==(a)),
+        view=true
     )
+end
+
 """
     expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat` that are due now or expired.
 """
-expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}) = 
-    filter(
-        [:arc, :material, :due] => 
-            (a,m,t) -> 
-                t <= 0 && #expired orders
-                m == mat &&  #orders for the same material
-                a == (src,dst), #nodes with the arc
-        x.open_orders, 
-        view = true
+function expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    a = (src,dst)
+    subset(x.open_orders,
+        :due => ByRow(<=(0)),
+        :material => ByRow(==(mat)),
+        :arc => ByRow(==(a)),
+        view=true
     )
+end
 
 """
     raw_material_orders(x::SupplyChainEnv, ids, rmat_names)
 
-Get a grouped dataframe of raw material consumption orders (:production) associated with order ids in `ids`
+Get a grouped dataframe of raw material consumption orders (:consumption) associated with order ids in `ids`
 """
 function raw_material_orders(x::SupplyChainEnv, ids, rmat_names)
-    raw_orders_df = filter(
-        [:id, :material] => 
-            (id,m) -> 
-                id in ids && 
-                m in rmat_names, 
-        x.open_orders, 
-        view = true
+    id_set = Set(ids)
+    rmat_set = Set(rmat_names)
+    groupby(
+        subset(x.open_orders,
+            :id => ByRow(in(id_set)),
+            :material => ByRow(in(rmat_set)),
+            view=true
+        ),
+        [:id, :material]
     )
-    return groupby(raw_orders_df, [:id, :material])
 end
 
 """
-    log_unfulfilled_demand!(x::SupplyChainEnv, order_row::DataFrameRow, accepted::Float64)
+    reallocate_demand!(x::SupplyChainEnv, order_row::DataFrameRow)
 
 Calculate unfulfilled demand and reallocate order to next supplier in the priority list.
 """
-function log_unfulfilled_demand!(x::SupplyChainEnv, order_row::DataFrameRow, accepted::Float64)
+function reallocate_demand!(x::SupplyChainEnv, order_row::DataFrameRow)
     sup, req = order_row.arc
+    if order_row.amount <= 0 || order_row.due > 0 || sup == req || req == :market #if order amount is not positive OR order is not due OR production order OR market demand, do NOT reallocate
+        return
+    end
     mat = order_row.material
     new_alloc = missing
-    if x.options[:reallocate] && sup != req && req != :market #don't reallocate if external demand or production request
-        sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
-        if length(sup_priority) > 1
-            sup_priority = vcat(sup_priority, sup_priority[1]) #add top priority to the end of the list so that lowest priority reallocates to top priority (cycle)
-            next_sup_loc = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
-            new_sup = sup_priority[next_sup_loc] #next supplier in line
-            new_alloc = (new_sup, req) #store new arc where reallocated
-            order_row.arc = new_alloc #update x.open_orders to reallocate material
-        end
-    end
-    if accepted > 0 #order was partially fulfilled
-        x.demand[end,:unfulfilled] = order_row.quantity
-        x.demand[end,:reallocated] = new_alloc
-    else #order was not fulfilled
-        original_amount = order_row.quantity
-        push!(x.demand, [x.period, (sup,req), mat, original_amount, 0, 0, original_amount, new_alloc])
+    sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
+    if length(sup_priority) > 1
+        sup_priority = vcat(sup_priority, sup_priority[1]) #add top priority to the end of the list so that lowest priority reallocates to top priority (cycle)
+        next_sup_loc = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
+        new_sup = sup_priority[next_sup_loc] #next supplier in line
+        new_alloc = (new_sup, req) #store new arc where reallocated
+        order_row.arc = new_alloc #update x.open_orders to reallocate material
     end
 end
 
@@ -200,8 +194,6 @@ end
 Open markets, apply material demands, and update inventory positions.
 """
 function simulate_markets!(x::SupplyChainEnv)
-    supply_df = filter([:period,:node] => (t,n) -> t == x.period && n in x.markets, x.inventory_on_hand, view=true) #on_hand inventory at node
-    supply_grp = groupby(supply_df, [:node, :material]) #group by node and material
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
     for n in x.markets
@@ -218,7 +210,7 @@ function simulate_markets!(x::SupplyChainEnv)
             #place p orders
             for _ in 1:floor(p) + rand(Bernoulli(p % 1)) #p is the number of orders. If fractional, the fraction is the likelihood of rounding up.
                 q = rand(dmnd) #sample demand
-                slt = rand(serv_lt) #sample service lead time
+                slt = ceil(Int,rand(serv_lt)) #sample service lead time
                 if q > 0
                     create_order!(x, n, :market, mat, q, slt)
                 end
@@ -228,12 +220,18 @@ function simulate_markets!(x::SupplyChainEnv)
                 pending = calculate_pending([(n,:market)], mat, orders_grp)
                 iszero(pending) && continue
             end
-            #fulfill demand (will include any open orders)
-            if ismto(x,n,mat) #fulfill make-to-order from production
-                capacities = get_prop(x.network, n, :production_capacity)
-                fulfill_from_production!(x, n, :market, mat, 0., supply_grp, missing, capacities)
-            else #fulfill orders from stock 
-                fulfill_from_stock!(x, n, :market, mat, 0., supply_grp, missing) #0 lead time since at market; pipeline_grp is missing since no arc betwen market node and market
+            #try to fulfill demand from stock (will include any open orders)
+            if x.tmp[n,mat,:on_hand] > 0
+                fulfill_from_stock!(x, n, :market, mat, 0) #0 lead time since at market
+            end
+            #if MTO and lead time is 0, try to fulfill from production
+            if last_order_id > x.num_orders && ismto(x,n,mat) #fulfill make-to-order from production if at least 1 new MTO created (NOTE: COULD RECHECK IF THERE IS ANY PENDING ORDER THAT WASN"T FULFILLED FROM STOCK)
+                lt_dist = get_prop(x.network, n, n, :lead_time)[mat]
+                if iszero(lt_dist)
+                    capacities = get_prop(x.network, n, :production_capacity)
+                    prod_lt = ceil(Int,rand(lt_dist))
+                    fulfill_from_production!(x, n, :market, mat, prod_lt, capacities)
+                end
             end
         end
     end

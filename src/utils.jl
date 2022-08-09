@@ -4,10 +4,10 @@
 Check if material `mat` is produced in node `n`.
 """
 function isproduced(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
-    !in(:bill_of_materials, keys(props(net,n))) && return false #n is not a plant
+    !(:bill_of_materials in keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
-    !in(mat, names(bom,2)) && return false #mat is not produced at this plant
-    raws = filter(k -> k < 0, bom[:,mat]) #names of raw materials
+    !(mat in names(bom,2)) && return false #mat is not produced at this plant
+    raws = filter(<(0), bom[:,mat]) #names of raw materials
     isempty(raws) && return false #mat is not produced at this plant (no raw materials are converted to mat)
 
     return true
@@ -20,10 +20,10 @@ isproduced(env::SupplyChainEnv, n, mat) = isproduced(env.network,n,mat)
 Check if material `mat` is consumed in node `n`.
 """
 function isconsumed(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
-    !in(:bill_of_materials, keys(props(net,n))) && return false #n is not a plant
+    !(:bill_of_materials in keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
-    !in(mat, names(bom,1)) && return false #mat is not consumed at this plant
-    prods = filter(k -> k < 0, bom[mat,:]) #names of products made from mat
+    !(mat in names(bom,1)) && return false #mat is not consumed at this plant
+    prods = filter(<(0), bom[mat,:]) #names of products made from mat
     isempty(prods) && return false #mat is not consumed at this plant (no products are made from mat)
 
     return true
@@ -36,23 +36,26 @@ isconsumed(env::SupplyChainEnv, n, mat) = isconsumed(env.network,n,mat)
 Check if material `mat` is make-to-order in node `n`.
 """
 function ismto(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
-    !in(:make_to_order, keys(props(x.network,n))) && return false #n is not a plant
+    !(:make_to_order in keys(props(x.network,n))) && return false #n is not a plant
     mto = get_prop(x.network, n, :make_to_order)
     return mat in mto
 end    
 
 """
     get_capacity_and_supply(
-        bom::NamedArray, rmat_names::Vector, cmat_names::Vector, 
-        capacities::Dict, supply_grp::GroupedDataFrame
+        x::SupplyChainEnv, n::Int, 
+        mat::Union{Symbol,String}, bom::NamedArray, 
+        rmat_names::Vector, cmat_names::Vector, 
+        capacities::Dict
     )
 
 Get available capacity and material supply at producer.
 """
 function get_capacity_and_supply(
-    n::Int, mat::Union{Symbol,String}, bom::NamedArray, 
+    x::SupplyChainEnv, n::Int, 
+    mat::Union{Symbol,String}, bom::NamedArray, 
     rmat_names::Vector, cmat_names::Vector, 
-    capacities::Dict, supply_grp::GroupedDataFrame
+    capacities::Dict
 )
     #commit production at plant
     capacity = [] #get production capacity
@@ -60,7 +63,7 @@ function get_capacity_and_supply(
     isempty(rmat_names) && return [0],[0] #if material is not produced at the node, then return zero capacity and zero supply
     push!(capacity, capacities[mat]) #production capacity for that material
     for rmat in rmat_names #check raw material supply
-        sup_pp = supply_grp[(node = n, material = rmat)].level[1] #supply of material involved in BOM
+        sup_pp = x.tmp[n,rmat,:on_hand] #supply of material involved in BOM
         push!(mat_supply, - sup_pp / bom[rmat,mat]) #only account for raw materials that are in the BOM
     end 
     for cmat in cmat_names #add capacity constraint for any co-products (scaled by stoichiometry)
