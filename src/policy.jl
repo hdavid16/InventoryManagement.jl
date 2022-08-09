@@ -123,7 +123,7 @@ function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol
     consume = 0
     if isconsumed(env, n, mat)
         bom = get_prop(env.network, n, :bill_of_materials)
-        mprods = names(filter(i -> i < 0, bom[mat,:]), 1) #find which products are produced from mat
+        mprods = names(filter(<(0), bom[mat,:]), 1) #find which products are produced from mat
         for mprod in mprods
             ordered = action[mprod, (n, n)] #amount of product ordered
             stoich = bom[mat, mprod] #stoichiometry
@@ -171,16 +171,16 @@ function calculate_reorder(
 end
 
 """
-    simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), kwargs...)
+    simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), fulfillment_type::Symbol = :delivered, kwargs...)
 
 Step through a simulation using a specified reorder policy. `args` are the
 arguments that are passed to the `reorder_policy` function.
 """
-function simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), kwargs...)
+function simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), fulfillment_type::Symbol = :delivered, kwargs...)
     for _ in 1:env.num_periods
         action = reorder_policy(env, args...; kwargs...)
         (env)(action)
     end
 
-    calculate_service_measures!(env; window)
+    calculate_service_measures!(env; window, fulfillment_type)
 end

@@ -8,22 +8,20 @@ Calculate profit at each node in the network
 """
 function calculate_profit!(x::SupplyChainEnv)
     #filter data
-    sales_grp1 = @chain x.fulfillments begin
-        @rsubset( #delivered orders + lost sales
-            :period == x.period, 
-            :type in Set([Symbol("delivered"),Symbol("lost_sale")]), 
-            view=true
-        ) 
-        groupby([:arc, :material])
-    end
-    orders_grp1 = @chain x.open_orders begin
-        @rsubset( #backlogged order quantities
-            :id in Set(sales_df1.id), 
-            :due <= 0, 
-            view=true
-        )
-        groupby([:arc, :material])
-    end
+    type_set = Set([:delivered, :lost_sale])
+    sales_df1 = subset(x.fulfillments, #delivered orders + lost sales
+        :period => ByRow(==(x.period)),
+        :type => ByRow(in(type_set)),
+        view=true
+    )
+    id_set = Set(sales_df1.id)
+    orders_df1 = subset(x.open_orders, #backlogged order quantities
+        :id => ByRow(in(id_set)),
+        :due => ByRow(<=(0)),
+        view=true
+    )
+    sales_grp1 = groupby(sales_df1, [:arc, :material])
+    orders_grp1 = groupby(orders_df1, [:arc, :material])
 
     #evaluate node profit
     for n in vertices(x.network)
@@ -81,11 +79,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, 
     dmnd_penalty = get_prop(x.network, arc..., :unfulfilled_penalty)[mat]
     key = (arc = (n,req), material = mat)
     if (sales_price > 0 || dmnd_penalty > 0) && key in keys(sales_grp1)
-        sold = sum(@rsubset(sales_grp1[key], :type != Symbol("lost_sale"), view=true).amount; init=0)
+        sold = sum(filter(:type => !=(:lost_sale), sales_grp1[key], view=true).amount; init=0)
         if key in keys(orders_grp1)
             unfilled = orders_grp1[key].amount[1]
         else
-            unfilled = sum(@rsubset(sales_grp1[key], :type == Symbol("lost_sale"), view=true).amount; init=0)
+            unfilled = sum(filter(:type => ==(:lost_sale), sales_grp1[key], view=true).amount; init=0)
         end
         s += sales_price * sold
         p -= dmnd_penalty * unfilled
@@ -106,7 +104,7 @@ function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::
     ap = 0 #accounts payable
     key = (arc = (sup,n), material = mat)
     if price > 0 || trans_cost > 0 && key in keys(sales_grp1) #pay purchase of inventory and transportation cost (assume it is paid to a third party)
-        purchased = sum(@rsubset(sales_grp1[key], :type != Symbol("lost_sale"), view=true).amount; init=0)
+        purchased = sum(filter(:type !=(:lost_sale), sales_grp1[key], view=true).amount; init=0)
         ap -= purchased * price
         ap -= purchased * trans_cost
     end

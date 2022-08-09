@@ -7,7 +7,7 @@ function isproduced(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
     !(:bill_of_materials in keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
     !(mat in names(bom,2)) && return false #mat is not produced at this plant
-    raws = filter(k -> k < 0, bom[:,mat]) #names of raw materials
+    raws = filter(<(0), bom[:,mat]) #names of raw materials
     isempty(raws) && return false #mat is not produced at this plant (no raw materials are converted to mat)
 
     return true
@@ -23,7 +23,7 @@ function isconsumed(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
     !(:bill_of_materials in keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
     !(mat in names(bom,1)) && return false #mat is not consumed at this plant
-    prods = filter(k -> k < 0, bom[mat,:]) #names of products made from mat
+    prods = filter(<(0), bom[mat,:]) #names of products made from mat
     isempty(prods) && return false #mat is not consumed at this plant (no products are made from mat)
 
     return true

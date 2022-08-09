@@ -48,10 +48,6 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #calculate profit at each node
     if x.options[:evaluate_profit]
         calculate_profit!(x)
-        x.reward = @chain x.profit begin
-            @rsubset(:period == x.period)
-            sum(_.value; init=0)
-        end
-        x.reward = sum(@rsubset(x.profit, :period == x.period, view=true).value) #update reward (current profit). NOTE: is this ok for RL?
+        x.reward = sum(filter(:period => ==(x.period), x.profit, view=true).value) #update reward (current profit). NOTE: is this ok for RL?
     end
 end

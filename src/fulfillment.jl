@@ -22,17 +22,20 @@ function fulfill_from_stock!(
         if accepted_inv > 0
             row.amount -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
             x.tmp[src,mat,:on_hand] -= accepted_inv #remove inventory from site
-            status = dst == :market ? :delivered : :sent #if market order, log as amount fulfilled ("delivered")
-            push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, status)) #log order is sent
-            dst != :market && make_shipment!(x, row.id, src, dst, mat, accepted_inv, lead) #ship material (unless it is external demand)
+            push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :sent)) #log order as sent
+            if dst == :market
+                push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :delivered)) #log order as delivered
+            else
+                make_shipment!(x, row.id, src, dst, mat, accepted_inv, lead) #ship material (unless it is external demand)
+            end
         end
         if x.options[:reallocate] #try to reallocate unfulfilled order if reallocation allowed
             reallocate_demand!(x, row)
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = Set(@rsubset(orders_df, :amount <= 0, view=true).id) #find fulfilled orders
-    @rsubset!(x.open_orders, !(:id in fulfilled_orders)) #remove fulfilled orders
+    fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
+    filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders
 end
 
 """
@@ -53,8 +56,8 @@ function fulfill_from_production!(
 
     #extract info
     bom = get_prop(x.network, src, :bill_of_materials)
-    rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
-    cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
+    rmat_names = names(filter(<(0), bom[:,mat]), 1) #names of raw materials
+    cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of co-products
 
     #get relevant orders on that arc & raw material orders (:consumption)
     orders_df = relevant_orders(x, src, dst, mat) #NOTE: Assume that if plant requests production, it will accept early fulfillment
@@ -83,8 +86,8 @@ function fulfill_from_production!(
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = Set(@rsubset(orders_df, :amount <= 0, view=true).id) #find fulfilled orders
-    @rsubset!(x.open_orders, !(:id in fulfilled_orders)) #remove fulfilled orders (with any associated production orders)
+    fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
+    filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
 end
 
 """
@@ -193,13 +196,13 @@ Update inventories throughout the network for arrived shipments.
 """
 function update_shipments!(x::SupplyChainEnv)
     #find active shipments with 0 lead time
-    arrivals = @rsubset(x.shipments, :lead <= 0, view=true) 
+    arrivals = filter(:lead => <=(0), x.shipments, view=true) 
     for i in 1:nrow(arrivals)
         id, a, mat, amount = arrivals[i, [:id, :arc, :material, :amount]]
         #update inventories and capacities
         shipment_completed!(x, id, amount, a, mat)
     end
-    @rsubset!(x.shipments, :lead > 0) #remove shipments that arrived (and any zero values)
+    filter!(:lead => >(0), x.shipments) #remove shipments that arrived (and any zero values)
 end
 
 """
@@ -221,7 +224,7 @@ function shipment_completed!(x::SupplyChainEnv, order_id::Int, amount::Float64, 
         capacity[mat] += amount
         #restore any co-product production capacity
         bom = get_prop(x.network, arc[1], :bill_of_materials)
-        cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of co-products
+        cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of co-products
         for cmat in cmat_names
             capacity[cmat] += amount*bom[cmat,mat]
         end

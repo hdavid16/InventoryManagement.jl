@@ -66,12 +66,12 @@ end
 Delete expired orders (lost sales).
 """
 function lost_sales!(x::SupplyChainEnv)
-    expired_orders = @rsubset(x.open_orders, :due <= 0, view=true)
+    expired_orders = filter(:due => <=(0), x.open_orders, view=true)
     for row in eachrow(expired_orders)
         push!(x.fulfillments, (row.id, x.period, row.arc, row.material, row.amount, :lost_sale))
     end
     if !isempty(expired_orders) #remove expired orders if there are any
-        @rsubset!(x.open_orders, :due > 0)
+        filter!(:due => >(0), x.open_orders)
     end
 end
 
@@ -87,8 +87,8 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
     #create raw material consumption and coproduction orders
     if (sup == req && isproduced(x,sup,mat)) || (req == :market && ismto(x,sup,mat))
         bom = get_prop(x.network, sup, :bill_of_materials)
-        rmat_names = names(filter(k -> k < 0, bom[:,mat]), 1) #names of raw materials
-        cmat_names = names(filter(k -> k > 0, bom[:,mat]), 1) #names of raw materials
+        rmat_names = names(filter(<(0), bom[:,mat]), 1) #names of raw materials
+        cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names
             push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]]) #update order history
             push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]])
@@ -124,27 +124,47 @@ end
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat` with any due date.
 """
-all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}) =
-    @rsubset(x.open_orders, :material == mat, :arc == (src,dst), view=true)
+function all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    a = (src,dst)
+    subset(x.open_orders,
+        :material => ByRow(==(mat)),
+        :arc => ByRow(==(a)),
+        view=true
+    )
+end
 
 """
     expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat` that are due now or expired.
 """
-expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String}) = 
-    @rsubset(x.open_orders, :due <= 0, :material == mat, :arc == (src,dst), view=true)
+function expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    a = (src,dst)
+    subset(x.open_orders,
+        :due => ByRow(<=(0)),
+        :material => ByRow(==(mat)),
+        :arc => ByRow(==(a)),
+        view=true
+    )
+end
 
 """
     raw_material_orders(x::SupplyChainEnv, ids, rmat_names)
 
 Get a grouped dataframe of raw material consumption orders (:consumption) associated with order ids in `ids`
 """
-raw_material_orders(x::SupplyChainEnv, ids, rmat_names) =
-    @chain x.open_orders begin
-        @rsubset(:id in Set(ids), :material in Set(rmat_names), view=true)
-        groupby([:id,:material])
-    end
+function raw_material_orders(x::SupplyChainEnv, ids, rmat_names)
+    id_set = Set(ids)
+    rmat_set = Set(rmat_names)
+    groupby(
+        subset(x.open_orders,
+            :id => ByRow(in(id_set)),
+            :material => ByRow(in(rmat_set)),
+            view=true
+        ),
+        [:id, :material]
+    )
+end
 
 """
     reallocate_demand!(x::SupplyChainEnv, order_row::DataFrameRow)
@@ -201,9 +221,11 @@ function simulate_markets!(x::SupplyChainEnv)
                 iszero(pending) && continue
             end
             #try to fulfill demand from stock (will include any open orders)
-            fulfill_from_stock!(x, n, :market, mat, 0) #0 lead time since at market
+            if x.tmp[n,mat,:on_hand] > 0
+                fulfill_from_stock!(x, n, :market, mat, 0) #0 lead time since at market
+            end
             #if MTO and lead time is 0, try to fulfill from production
-            if ismto(x,n,mat) #fulfill make-to-order from production (NOTE: COULD RECHECK IF THERE IS ANY PENDING ORDER THAT WASN"T FULFILLED FROM STOCK)
+            if last_order_id > x.num_orders && ismto(x,n,mat) #fulfill make-to-order from production if at least 1 new MTO created (NOTE: COULD RECHECK IF THERE IS ANY PENDING ORDER THAT WASN"T FULFILLED FROM STOCK)
                 lt_dist = get_prop(x.network, n, n, :lead_time)[mat]
                 if iszero(lt_dist)
                     capacities = get_prop(x.network, n, :production_capacity)
