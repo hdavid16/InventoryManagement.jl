@@ -116,6 +116,7 @@ function inventory_components(
 
     x.tmp[n,mat,:level] = ilevel
     x.tmp[n,mat,:position] = ipos
+    x.tmp[n,mat,:unfulfilled] = backlog
 end
 
 """
@@ -138,6 +139,7 @@ function update_dfs!(x::SupplyChainEnv)
             if !iszero(x.tmp[n,m,:discarded])
                 push!(x.inventory, (x.period, n, m, x.tmp[n,m,:discarded], :discarded))
             end
+            push!(x.inventory, (x.period, n, m, x.tmp[n,m,:unfulfilled], :unfulfilled))
             push!(x.inventory, (x.period, n, m, x.tmp[n,m,:on_hand], :on_hand))
             push!(x.inventory, (x.period, n, m, x.tmp[n,m,:level], :level))
             push!(x.inventory, (x.period, n, m, x.tmp[n,m,:position], :position))

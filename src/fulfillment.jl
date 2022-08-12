@@ -34,8 +34,16 @@ function fulfill_from_stock!(
         end
     end
     #remove any fulfilled orders from x.open_orders
-    fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
-    filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders
+    fulfilled_order_list = filter(:amount => <=(0), orders_df, view=true).id
+    if !isempty(fulfilled_order_list)
+        fulfilled_orders = Set(fulfilled_order_list) #find fulfilled orders
+        if length(fulfilled_order_list) != length(fulfilled_orders) #there are production orders that were fulfilled from stock (delete these)
+            prod_keys = Set([:consumption,:coproduction])
+            filter!([:id,:arc] => (id,arc) -> !(id in fulfilled_orders && arc[2] in prod_keys), x.orders)
+        end
+        filter(:id => in(fulfilled_orders), x.orders, view=true).fulfilled .= x.period #store fulfillment date
+        filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders
+    end
 end
 
 """
@@ -87,7 +95,10 @@ function fulfill_from_production!(
     end
     #remove any fulfilled orders from x.open_orders
     fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
-    filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
+    if isempty(fulfilled_orders)
+        filter(:id => in(fulfilled_orders), x.orders, view=true).fulfilled .= x.period #store fulfillment date
+        filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
+    end
 end
 
 """
@@ -197,8 +208,8 @@ Update inventories throughout the network for arrived shipments.
 function update_shipments!(x::SupplyChainEnv)
     #find active shipments with 0 lead time
     arrivals = filter(:lead => <=(0), x.shipments, view=true) 
-    for i in 1:nrow(arrivals)
-        id, a, mat, amount = arrivals[i, [:id, :arc, :material, :amount]]
+    for row in eachrow(arrivals)
+        id, a, mat, amount = row[[:id, :arc, :material, :amount]]
         #update inventories and capacities
         shipment_completed!(x, id, amount, a, mat)
     end

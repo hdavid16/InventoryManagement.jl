@@ -103,8 +103,8 @@ function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::
     pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]
     ap = 0 #accounts payable
     key = (arc = (sup,n), material = mat)
-    if price > 0 || trans_cost > 0 && key in keys(sales_grp1) #pay purchase of inventory and transportation cost (assume it is paid to a third party)
-        purchased = sum(filter(:type !=(:lost_sale), sales_grp1[key], view=true).amount; init=0)
+    if (price > 0 || trans_cost > 0) && key in keys(sales_grp1) #pay purchase of inventory and transportation cost (assume it is paid to a third party)
+        purchased = sum(filter(:type => !=(:lost_sale), sales_grp1[key], view=true).amount; init=0)
         ap -= purchased * price
         ap -= purchased * trans_cost
     end

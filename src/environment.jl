@@ -16,7 +16,7 @@ abstract type AbstractEnv end
 - `fulfillments::DataFrame`: Fulfilment log for system orders.
 - `shipments::DataFrame`: Temporary table with active shipments and time to arrival on each arc.
 - `profit::DataFrame`: Timeseries with profit @ each node.
-- `metrics::DataFrame`: Service metrics (service level and fill rate) for each supplier and material.
+- `metrics::Dict`: Service metrics (service level and fill rate) for each supplier and material.
 - `reward::Float64`: Final reward in the system (used for RL)
 - `period::Int`: Current period in the simulation.
 - `num_periods::Int`: Number of periods in the simulation.
@@ -44,7 +44,7 @@ mutable struct SupplyChainEnv <: AbstractEnv
     fulfillments::DataFrame
     shipments::DataFrame
     profit::DataFrame
-    metrics::DataFrame
+    metrics::Dict
     reward::Float64
     period::Int
     num_periods::Int
@@ -186,7 +186,8 @@ function create_logging_dfs(net::MetaDiGraph, tmp::Dict)
         due = Int[],
         arc = Tuple[],
         material = Any[],
-        amount = Real[]
+        amount = Real[],
+        fulfilled = Any[]
     )
 
     #outstanding orders
@@ -225,7 +226,7 @@ function create_logging_dfs(net::MetaDiGraph, tmp::Dict)
     )
 
     #metrics
-    metrics = DataFrame()
+    metrics = Dict()
 
     return inventory, orders, open_orders, fulfillments, shipments, profit, metrics
 end
@@ -241,12 +242,13 @@ function create_temp_placeholders(net::MetaDiGraph, echelons::Dict)
     i0 = Dict(n => get_prop(net, n, :initial_inventory) for n in vertices(net))
     for n in vertices(net)
         for m in get_prop(net, n, :node_materials)
-            ech_stk = sum([m in keys(i0[n]) ? i0[n][m] : 0 for n1 in echelons[n]]) #sum downstream inventories for that material
+            ech_stk = sum([m in keys(i0[n1]) ? i0[n1][m] : 0 for n1 in echelons[n]]) #sum downstream inventories for that material
             tmp[n,m,:echelon] = ech_stk
             tmp[n,m,:on_hand] = i0[n][m]
             tmp[n,m,:position] = i0[n][m]
             tmp[n,m,:level] = i0[n][m]
             tmp[n,m,:discarded] = 0
+            tmp[n,m,:unfulfilled] = 0
             for dst in outneighbors(net,n)
                 tmp[(n,dst),m,:pipeline] = 0
             end

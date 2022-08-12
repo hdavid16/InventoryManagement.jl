@@ -38,6 +38,8 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     mats = env.materials
 
     #check inputs
+    reorder_point = convert(Dict{Any, Float64}, reorder_point)
+    policy_param = convert(Dict{Any, Float64}, policy_param)
     check_policy_input!(reorder_point, request_nodes, mats, default = -Inf) #if no policy given for a node/material, set the params to -Inf so that a reorder is never triggered
     check_policy_input!(policy_param, request_nodes, mats, default = -Inf) #if no policy given for a node/material, set the params to -Inf so that a reorder is never triggered
     check_policy_input!(review_period, request_nodes, mats, default = 1)
@@ -136,14 +138,14 @@ end
 
 """
     calculate_reorder(
-        n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, OM::Real,
+        n::Int, mat::Union{Symbol,String}, state::Real, MOQ::Real, OM::Real,
         policy_type::Union{Dict, Symbol}, policy_param::Dict
     )
 
 Calculate reorder quantity for material `mat` at node `n`.
 """
 function calculate_reorder(
-    n::Int, mat::Union{Symbol,String}, state::Float64, MOQ::Real, OM::Real,
+    n::Int, mat::Union{Symbol,String}, state::Real, MOQ::Real, OM::Real,
     policy_type::Union{Dict, Symbol}, policy_param::Dict
 )
     pol_type = policy_type isa Dict ? policy_type[n] : policy_type #policy type
@@ -171,16 +173,16 @@ function calculate_reorder(
 end
 
 """
-    simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), fulfillment_type::Symbol = :delivered, kwargs...)
+    simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), metrics::Tuple = (:service_levels,:fill_rates), kwargs...)
 
 Step through a simulation using a specified reorder policy. `args` are the
 arguments that are passed to the `reorder_policy` function.
 """
-function simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), fulfillment_type::Symbol = :delivered, kwargs...)
+function simulate_policy!(env::SupplyChainEnv, args...; window::Tuple=(0,Inf), metrics::Tuple = (:service_levels,:fill_rates), kwargs...)
     for _ in 1:env.num_periods
         action = reorder_policy(env, args...; kwargs...)
         (env)(action)
     end
 
-    calculate_service_measures!(env; window, fulfillment_type)
+    calculate_service_measures!(env; window, metrics)
 end

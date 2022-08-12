@@ -71,6 +71,8 @@ function lost_sales!(x::SupplyChainEnv)
         push!(x.fulfillments, (row.id, x.period, row.arc, row.material, row.amount, :lost_sale))
     end
     if !isempty(expired_orders) #remove expired orders if there are any
+        lost_sales = Set(expired_orders.id)
+        filter(:id => in(lost_sales), x.orders, view=true).fulfilled .= :lost_sale #log lost sale
         filter!(:due => >(0), x.open_orders)
     end
 end
@@ -82,7 +84,7 @@ Create and log order.
 """
 function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Real)
     x.num_orders += 1 #create new order ID
-    push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount]) #update order history
+    push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount, missing]) #update order history
     push!(x.open_orders, [x.num_orders, service_lead_time, (sup,req), mat, amount]) #add order to temp order df
     #create raw material consumption and coproduction orders
     if (sup == req && isproduced(x,sup,mat)) || (req == :market && ismto(x,sup,mat))
@@ -90,11 +92,11 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
         rmat_names = names(filter(<(0), bom[:,mat]), 1) #names of raw materials
         cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names
-            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]]) #update order history
+            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat], missing]) #update order history
             push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]])
         end
         for cmat in cmat_names
-            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat]]) #update order history
+            push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat], missing]) #update order history
             push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat]])
         end
     end
@@ -117,7 +119,7 @@ function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, ma
         rel_orders = expired_relevant_orders(x,src,dst,mat)
     end
     #return sorted by soonest due date
-    return sort(rel_orders, [:due, :id], view=true) #sort by service lead time and creation date (serve orders with lowest service lead time, ranked by order age)
+    return sort(rel_orders, [order(:due, by = t -> iszero(t) ? -Inf : t), :id], view=true) #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date (id)
 end
 """
     all_relevant_orders(x::SupplyChainEnv, src::Int, [dst::Union{Int,Symbol},] mat::Union{Symbol,String})
