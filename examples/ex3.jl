@@ -52,8 +52,15 @@ env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
 simulate_policy!(env, s, S; policy_type, review_period, policy_variable)
 
 ##make plots
-using DataFrames, StatsPlots
+using DataFramesMeta, StatsPlots
 #inventory level
-df = filter(i -> i.node > 1, env.echelon_stock)
-fig1 = @df df plot(:period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, legend = :bottomright,
-                    xlabel="period", ylabel="echelon stock", ylim=(min(0, minimum(df.level)),maximum(df.level)))
+fig1 = @chain env.inventory begin
+    @rsubset(:type == Symbol("echelon"))
+    @rsubset(:location > 1)
+    plot(
+        _.period, _.amount, group=(Node = _.location, Mat = _.material), 
+        linetype=:steppost, legend = :bottomright,
+        xlabel="period", ylabel="echelon stock", 
+        ylim=(min(0, minimum(_.amount)), maximum(_.amount))
+    )
+end

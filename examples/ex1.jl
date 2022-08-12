@@ -51,19 +51,25 @@ env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
 simulate_policy!(env, s, S; policy_variable, policy_type, review_period)
 
 #make plots
-using DataFrames, StatsPlots
+using DataFramesMeta, StatsPlots
 #profit
-entity_profit = transform(env.profit, 
-    :node => ByRow(i -> i == 1 ? "Plant" : "Retailer") => :entity
-)
-profit = transform(groupby(entity_profit, :entity), :value => cumsum)
-fig1 = @df profit plot(
-    :period, :value_cumsum, group=:entity, linetype=:steppost,
-    legend = :topleft, xlabel="period", ylabel="cumulative profit"
-)
+fig1 = @chain env.profit begin
+    @rtransform(:entity = :node == 1 ? "Plant" : "Retailer")
+    groupby(:entity)
+    @combine(:cum_value = cumsum(:value), :period)
+    plot(
+        _.period, _.cum_value, group=_.entity,
+        linetype=:steppost, legend=:topleft,
+        xlabel="period", ylabel="cumulative profit"
+    )
+end
 
 #inventory position
-fig2 = @df env.inventory_position plot(
-    :period, :level, group={Node = :node, Mat = :material}, linetype=:steppost, 
-    legend = :bottomleft, xlabel="period", ylabel="inventory position", yticks = 0:25:125
-)
+fig2 = @chain env.inventory begin
+    @rsubset(:type == Symbol("position"))
+    plot(
+        _.period, _.amount, group=(Node = _.location, Mat = _.material),
+        linetype=:steppost, legend = :topleft, 
+        xlabel="period", ylabel="inventory position", yticks = 0:25:125
+    )
+end
