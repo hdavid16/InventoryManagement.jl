@@ -95,7 +95,7 @@ function fulfill_from_production!(
     end
     #remove any fulfilled orders from x.open_orders
     fulfilled_orders = Set(filter(:amount => <=(0), orders_df, view=true).id) #find fulfilled orders
-    if isempty(fulfilled_orders)
+    if !isempty(fulfilled_orders)
         filter(:id => in(fulfilled_orders), x.orders, view=true).fulfilled .= x.period #store fulfillment date
         filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders (with any associated production orders)
     end

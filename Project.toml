@@ -1,7 +1,7 @@
 name = "InventoryManagement"
 uuid = "2ad91f63-398d-4379-af6a-5a85689656d5"
 authors = ["hdavid16 <hperez16@gmail.com> and contributors"]
-version = "0.5.4"
+version = "0.5.5"
 
 [deps]
 Chain = "8be319e6-bccf-4806-a6f7-6fae938471bc"
