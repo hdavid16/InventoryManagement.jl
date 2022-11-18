@@ -1,9 +1,9 @@
 """
-    place_orders!(x::SupplyChainEnv, act::NamedArray)
+    replenishment_orders!(x::SupplyChainEnv, act::NamedArray)
 
 Place inventory replenishment requests throughout the network.
 """
-function place_orders!(x::SupplyChainEnv, act::NamedArray)
+function replenishment_orders!(x::SupplyChainEnv, act::NamedArray)
     #if no replenishments requested and no open orders exist, exit
     iszero(act) && isempty(x.open_orders) && return
     #extract info
@@ -14,38 +14,48 @@ function place_orders!(x::SupplyChainEnv, act::NamedArray)
     leads = Dict((a,mat) => ceil(Int,rand(get_prop(x.network, a, :lead_time)[mat])) for a in edges(x.network), mat in mats)
     servs = Dict((a,mat) => ceil(Int,rand(get_prop(x.network, a, :service_lead_time)[mat])) for a in edges(x.network), mat in mats)
     #identify nodes that can place requests
-    nodes = topological_sort(x.network) #sort nodes in topological order so that orders are placed moving down the network
-    source_nodes = filter(n -> isempty(inneighbors(x.network, n)), nodes) #source nodes (can't place replenishment orders)
-    request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
+    supplier_nodes = filter( #nodes supplying inventory
+        n -> !isempty(outneighbors(x.network, n)), #exclude sink nodes
+        topological_sort(x.network) #sort nodes in topological order so that orders are placed moving down the network
+    )
     #get copy of existing open orders
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])
 
     #place requests
-    for req in request_nodes #loop by nodes placing requests (in reverse topological order)
-        sup_priority = get_prop(x.network, req, :supplier_priority) #get supplier priority list
-        req_mats = get_prop(x.network, req, :node_materials) #get materials that are compatible with requester node
-        for mat in req_mats, sup in sup_priority[mat] #loop by material and supplier priority
-            a = (sup, req) #arc
-            lead = leads[Edge(a...), mat] #sampled lead time
-            serv = servs[Edge(a...), mat] #sampled service lead time
-            amount = act[mat, a] #amount requested
+    while !isempty(supplier_nodes)
+        sup = popfirst!(supplier_nodes)
+        reqs = outneighbors(x.network, sup) #requestors (downstream nodes). 
+        arcs = [(sup,req) for req in reqs]
+        for mat in get_prop(x.network, sup, :node_materials) #loop by material
             #continue to next iteration if no request made and no backlog
-            if iszero(amount)
+            if iszero(sum(act[mat,arcs]))
                 #determine if there are any open orders for this material on the arc. If not, skip the fulfillment step.
-                pending = calculate_pending([a,(req,:consumption)], mat, orders_grp) #include any raw material conversion orders (:consumption)
+                pending = calculate_pending(
+                    vcat(arcs,(sup,:consumption)), #include any raw material conversion orders (:consumption)
+                    mat, 
+                    orders_grp
+                )
                 if iszero(pending)
                     continue 
                 end
             else
                 #create order and save service lead time
-                create_order!(x, a..., mat, amount, serv)
+                for arc in arcs
+                    amount = act[mat, arc] #amount requested
+                    if amount > 0
+                        serv = servs[Edge(arc...), mat] #sampled service lead time
+                        create_order!(x, arc..., mat, amount, serv)
+                    end
+                end
             end
-            #try to fulfill request
-            if sup == req
-                fulfill_from_production!(x, a..., mat, lead, capacities[sup])
-            else
-                fulfill_from_stock!(x, a..., mat, lead)
-            end
+            #fulfill production orders
+            if sup in x.producers 
+                lead = leads[Edge(sup,sup), mat] #sampled lead time
+                fulfill_from_production!(x, sup, sup, mat, lead, capacities[sup])
+            end 
+            #fulfill stock transfer orders
+            reallocated_suppliers = fulfill_from_stock!(x, sup, setdiff(reqs,sup), mat, leads)
+            pushfirst!(supplier_nodes, reallocated_suppliers...) #preappend reallocated suppliers
         end
     end
 
@@ -78,11 +88,11 @@ function lost_sales!(x::SupplyChainEnv)
 end
 
 """
-    create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Float64)
+    create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Material, amount::Real, service_lead_time::Float64)
 
 Create and log order.
 """
-function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, amount::Real, service_lead_time::Real)
+function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Material, amount::Real, service_lead_time::Real)
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount, missing]) #update order history
     push!(x.open_orders, [x.num_orders, service_lead_time, (sup,req), mat, amount]) #add order to temp order df
@@ -103,30 +113,61 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
 end
 
 """
-    relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    relevant_orders(x::SupplyChainEnv, src::Int, dsts::Vector{Int}, mat::Material)
+
+Return filtered dataframe of active orders relevant to the arcs downstream of `src` for material `mat`.
+
+    relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Material)
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat`.
 """
-function relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
-    #node from which to check early_fulfillment param value
-    indicator_node = dst == :market ? src : dst
-    param_key = dst == :market ? :market_early_fulfillment : :early_fulfillment
-    early_fulfillment = get_prop(x.network, indicator_node, param_key)[mat]
-    #loop through orders on relevant arc
-    if src == dst || early_fulfillment #assume production at plant accepts early fulfillment
+function relevant_orders(x::SupplyChainEnv, src::Int, dsts::Vector{Int}, mat::Material)
+    arcs = Set([(src,dst) for dst in dsts]) #build all arcs
+    #filter by arc and due date if early fulfillment not allowed (if early fulfillment not allowed, only include due/expired orders)
+    mask(arc,due) = arc in arcs && (get_prop(x.network, arc[2], :early_fulfillment)[mat] || due <= 0)
+    rel_orders = subset(x.open_orders,
+        :material => ByRow(==(mat)),
+        :arc => ByRow(in(arcs)),
+        [:arc, :due] => ByRow(mask),
+        view=true
+    )
+    customer_priority = get_prop(x.network, src, :customer_priority)[mat]
+    sort( #return sorted by soonest due date
+        rel_orders, #NOTE: Can add customer priority when sorting
+        [
+            order(:due, by = t -> iszero(t) ? -Inf : t), #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), 
+            :id, #then rank by order creation date (id)
+            order(:arc, by = a -> findfirst(==(a[2]), customer_priority)), #prioritize by customer priority
+        ], #NOTE: ASSUME SORT FIRST BY TIME AND THEN BY PRIORITY!
+        view=true
+    ) 
+end
+function relevant_orders(x::SupplyChainEnv, src::Int, dst::Int, mat::Material)
+    rel_orders = all_relevant_orders(x,src,dst,mat) #assume production at plant accepts early fulfillment
+    sort( #return sorted by soonest due date
+        rel_orders, 
+        [order(:due, by = t -> iszero(t) ? -Inf : t), :id], #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date (id)
+        view=true
+    ) 
+end
+function relevant_orders(x::SupplyChainEnv, src::Int, dst::Symbol, mat::Material)
+    if get_prop(x.network, src, :market_early_fulfillment)[mat]
         rel_orders = all_relevant_orders(x,src,dst,mat)
     else #only attempt to fulfill orders that have expired their service lead time
-        rel_orders = expired_relevant_orders(x,src,dst,mat)
+        rel_orders = due_relevant_orders(x,src,dst,mat)
     end
-    #return sorted by soonest due date
-    return sort(rel_orders, [order(:due, by = t -> iszero(t) ? -Inf : t), :id], view=true) #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date (id)
+    sort( #return sorted by soonest due date
+        rel_orders, 
+        [order(:due, by = t -> iszero(t) ? -Inf : t), :id], #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date (id)
+        view=true
+    ) 
 end
 """
-    all_relevant_orders(x::SupplyChainEnv, src::Int, [dst::Union{Int,Symbol},] mat::Union{Symbol,String})
+    all_relevant_orders(x::SupplyChainEnv, src::Int, [dst::Union{Int,Symbol},] mat::Material)
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat` with any due date.
 """
-function all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+function all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Material)
     a = (src,dst)
     subset(x.open_orders,
         :material => ByRow(==(mat)),
@@ -136,11 +177,11 @@ function all_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}
 end
 
 """
-    expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+    due_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Material)
 
 Return filtered dataframe of active orders relevant to the arc `(src, dst)` for material `mat` that are due now or expired.
 """
-function expired_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Union{Symbol,String})
+function due_relevant_orders(x::SupplyChainEnv, src::Int, dst::Union{Int,Symbol}, mat::Material)
     a = (src,dst)
     subset(x.open_orders,
         :due => ByRow(<=(0)),
@@ -169,25 +210,46 @@ function raw_material_orders(x::SupplyChainEnv, ids, rmat_names)
 end
 
 """
+    update_orders!(x::SupplyChainEnv, orders_df::SubDataFrame)
+
+Update system orders (remove fulfilled orders from `x.open_orders` and log order fulfillment in `x.orders`).
+"""
+function update_orders!(x::SupplyChainEnv, orders_df::SubDataFrame)
+    fulfilled_order_list = filter(:amount => <=(0), orders_df, view=true).id
+    if !isempty(fulfilled_order_list)
+        fulfilled_orders = Set(fulfilled_order_list) #find fulfilled orders
+        if length(fulfilled_order_list) != length(fulfilled_orders) #there are production orders that were fulfilled from stock (delete these)
+            prod_keys = Set([:consumption,:coproduction])
+            filter!([:id,:arc] => (id,arc) -> !(id in fulfilled_orders && arc[2] in prod_keys), x.orders)
+        end
+        filter(:id => in(fulfilled_orders), x.orders, view=true).fulfilled .= x.period #store fulfillment date
+        filter!(:id => !in(fulfilled_orders), x.open_orders) #remove fulfilled orders
+    end
+end
+
+"""
     reallocate_demand!(x::SupplyChainEnv, order_row::DataFrameRow)
 
 Calculate unfulfilled demand and reallocate order to next supplier in the priority list.
 """
 function reallocate_demand!(x::SupplyChainEnv, order_row::DataFrameRow)
-    sup, req = order_row.arc
-    if order_row.amount <= 0 || order_row.due > 0 || sup == req || req == :market #if order amount is not positive OR order is not due OR production order OR market demand, do NOT reallocate
+    if order_row.amount <= 0 || order_row.due > 0 #if order amount is not positive OR order is not due, do NOT reallocate
         return
     end
+    sup, req = order_row.arc
     mat = order_row.material
-    new_alloc = missing
+    new_sup = nothing
     sup_priority = get_prop(x.network, req, :supplier_priority)[mat]
     if length(sup_priority) > 1
-        sup_priority = vcat(sup_priority, sup_priority[1]) #add top priority to the end of the list so that lowest priority reallocates to top priority (cycle)
         next_sup_loc = findfirst(k -> k == sup, sup_priority) + 1 #get next in line
-        new_sup = sup_priority[next_sup_loc] #next supplier in line
-        new_alloc = (new_sup, req) #store new arc where reallocated
-        order_row.arc = new_alloc #update x.open_orders to reallocate material
+        if next_sup_loc <= length(sup_priority) #stop reallocating when you have reached the lowest priority supplier
+            new_sup = sup_priority[next_sup_loc] #next supplier in line
+            new_alloc = (new_sup, req) #store new arc where reallocated
+            order_row.arc = new_alloc #update x.open_orders to reallocate material
+        end
     end
+
+    return new_sup
 end
 
 """
@@ -224,7 +286,7 @@ function simulate_markets!(x::SupplyChainEnv)
             end
             #try to fulfill demand from stock (will include any open orders)
             if x.tmp[n,mat,:on_hand] > 0
-                fulfill_from_stock!(x, n, :market, mat, 0) #0 lead time since at market
+                fulfill_from_stock!(x, n, :market, mat) #0 lead time since at market
             end
             #if MTO and lead time is 0, try to fulfill from production
             if last_order_id > x.num_orders && ismto(x,n,mat) #fulfill make-to-order from production if at least 1 new MTO created (NOTE: COULD RECHECK IF THERE IS ANY PENDING ORDER THAT WASN"T FULFILLED FROM STOCK)

@@ -49,11 +49,11 @@ function calculate_profit!(x::SupplyChainEnv)
 end
 
 """
-    holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+    holding_costs(x::SupplyChainEnv, n::Int, mat::Material)
 
 Calculate inventory holding costs (negative).
 """
-function holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+function holding_costs(x::SupplyChainEnv, n::Int, mat::Material)
     #holding cost
     hold_cost = get_prop(x.network, n, :holding_cost)[mat]
     c = 0
@@ -68,11 +68,11 @@ function holding_costs(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
 end
 
 """
-    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame, orders_grp1::GroupedDataFrame)
+    sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, mat::Material, sales_grp1::GroupedDataFrame, orders_grp1::GroupedDataFrame)
 
 Calculate sales (positive) and unfulfilled demand penalties (negative) for demand.
 """
-function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame, orders_grp1::GroupedDataFrame)
+function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, mat::Material, sales_grp1::GroupedDataFrame, orders_grp1::GroupedDataFrame)
     s, p = 0, 0 #sales and penalties
     arc = req == :market ? (n,) : (n,req)
     sales_price = get_prop(x.network, arc..., :sales_price)[mat]
@@ -93,11 +93,11 @@ function sales_and_penalties(x::SupplyChainEnv, n::Int, req::Union{Int,Symbol}, 
 end
 
 """
-    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame)
+    purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Material, sales_grp1::GroupedDataFrame)
 
 Calculate payments to suppliers and transportation costs (fixed and variable) (negative).
 """
-function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Union{Symbol,String}, sales_grp1::GroupedDataFrame)
+function purchases_and_pipeline_costs(x::SupplyChainEnv, sup::Int, n::Int, mat::Material, sales_grp1::GroupedDataFrame)
     price = get_prop(x.network, sup, n, :sales_price)[mat]
     trans_cost = get_prop(x.network, sup, n, :transportation_cost)[mat]
     pipe_holding_cost = get_prop(x.network, sup, n, :pipeline_holding_cost)[mat]

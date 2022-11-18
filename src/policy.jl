@@ -30,10 +30,8 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
 
     #read parameters
     nodes = reverse(topological_sort(env.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
-    source_nodes = filter(n -> isempty(inneighbors(env.network, n)), nodes) #source nodes (can't place replenishment orders)
-    sink_nodes = filter(n -> isempty(outneighbors(env.network, n)), nodes) #sink nodes (can't fulfill replenishment orders)
-    request_nodes = setdiff(nodes, source_nodes) #nodes placing requests (all non-source nodes)
-    supply_nodes = setdiff(nodes, sink_nodes) #nodes fulfilling requests (all non-sink nodes; used for MOQ)
+    request_nodes = filter(n -> !isempty(inneighbors(env.network, n)), nodes) #nodes placing requests (all non-source nodes: can't place replenishment orders)
+    supply_nodes = filter(n -> !isempty(outneighbors(env.network, n)), nodes) #nodes fulfilling requests (all non-sink nodes; used for MOQ). sink nodes can't fulfill replenishment orders.
     arcs = [(e.src, e.dst) for e in edges(env.network)]
     mats = env.materials
 
@@ -96,14 +94,14 @@ check_policy_input!(args...; kwargs...) = nothing
 """
     get_inventory_state(
         env::SupplyChainEnv,
-        n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol}
+        n::Int, mat::Material, policy_variable::Union{Dict,Symbol}
     )
 
 Check the inventory state at node `n` for material `mat`.
 """
 function get_inventory_state(
     env::SupplyChainEnv,
-    n::Int, mat::Union{Symbol,String}, policy_variable::Union{Dict,Symbol}
+    n::Int, mat::Material, policy_variable::Union{Dict,Symbol}
 )
     pol_var = policy_variable isa Dict ? policy_variable[n] : policy_variable
     @assert pol_var in [:inventory_position, :echelon_stock] "Policy variable must be either `:inventory_position` or `:echelon_stock`."
@@ -117,11 +115,11 @@ function get_inventory_state(
 end
 
 """
-    get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
+    get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Material, action::NamedArray)
 
 Get expected material consumption at plants.
 """
-function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, action::NamedArray)
+function get_expected_consumption(env::SupplyChainEnv, n::Int, mat::Material, action::NamedArray)
     consume = 0
     if isconsumed(env, n, mat)
         bom = get_prop(env.network, n, :bill_of_materials)
@@ -138,14 +136,14 @@ end
 
 """
     calculate_reorder(
-        n::Int, mat::Union{Symbol,String}, state::Real, MOQ::Real, OM::Real,
+        n::Int, mat::Material, state::Real, MOQ::Real, OM::Real,
         policy_type::Union{Dict, Symbol}, policy_param::Dict
     )
 
 Calculate reorder quantity for material `mat` at node `n`.
 """
 function calculate_reorder(
-    n::Int, mat::Union{Symbol,String}, state::Real, MOQ::Real, OM::Real,
+    n::Int, mat::Material, state::Real, MOQ::Real, OM::Real,
     policy_type::Union{Dict, Symbol}, policy_param::Dict
 )
     pol_type = policy_type isa Dict ? policy_type[n] : policy_type #policy type

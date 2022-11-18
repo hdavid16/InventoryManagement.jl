@@ -61,11 +61,11 @@ function update_inventories!(x::SupplyChainEnv)
 end
 
 """
-    calculate_pending(arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame)
+    calculate_pending(arcs::Vector, mat::Material, orders_grp::GroupedDataFrame)
 
 Calculate commited material quantity (open orders) using a pre-filtered grouped dataframe.
 """
-calculate_pending(arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDataFrame) =
+calculate_pending(arcs::Vector, mat::Material, orders_grp::GroupedDataFrame) =
     sum(
         sum(orders_grp[(arc = a, material = mat)].amount; init=0) 
         for a in arcs if (arc = a, material = mat) in keys(orders_grp); 
@@ -73,11 +73,11 @@ calculate_pending(arcs::Vector, mat::Union{Symbol,String}, orders_grp::GroupedDa
     )
 
 """
-    calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+    calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Material)
 
 Calculate in-transit inventory of material `mat` to node `n`.
 """
-calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}) = 
+calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Material) = 
     sum(
         x.tmp[(src,n),mat,:pipeline] for src in inneighbors(x.network, n) 
             if mat in get_prop(x.network, src, :node_materials);
@@ -86,14 +86,14 @@ calculate_in_transit(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}) =
 
 """
     inventory_components(
-        x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
+        x::SupplyChainEnv, n::Int, mat::Material, 
         orders_grp::GroupedDataFrame
     )
 
 Extract components to determine inventory level and position.
 """
 function inventory_components(
-    x::SupplyChainEnv, n::Int, mat::Union{Symbol,String}, 
+    x::SupplyChainEnv, n::Int, mat::Material, 
     orders_grp::GroupedDataFrame
 )
     pipeline = calculate_in_transit(x,n,mat) #in-transit inventory to node n
@@ -120,11 +120,11 @@ function inventory_components(
 end
 
 """
-    update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+    update_echelons!(x::SupplyChainEnv, n::Int, mat::Material)
 
 Update echelon stocks for current time period.
 """
-function update_echelons!(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+function update_echelons!(x::SupplyChainEnv, n::Int, mat::Material)
     for ech in findall(i -> n in i, x.echelons) #identify which echelons have been affected and add to these
         if mat in get_prop(x.network, ech, :node_materials) #only add to echelon if that node holds that material
             x.tmp[ech,mat,:echelon] += x.tmp[n,mat,:position]
