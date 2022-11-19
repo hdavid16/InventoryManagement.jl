@@ -21,7 +21,7 @@ function fulfill_from_stock!(
         accepted_inv = accepted_from_stock(row.amount, supply, partial_fulfillment)
         if accepted_inv > 0
             #log fulfillment
-            row.amount -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
+            row.amount = floor(row.amount - accepted_inv, digits=x.options[:numerical_precision]) #update x.open_orders (deduct fulfilled part of the order)
             x.tmp[src,mat,:on_hand] -= accepted_inv #remove inventory from site
             push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :sent)) #log order as sent
             #ship material
@@ -50,7 +50,7 @@ function fulfill_from_stock!(x::SupplyChainEnv, src::Int, dst::Symbol, mat::Mate
         accepted_inv = accepted_from_stock(row.amount, supply, partial_fulfillment)
         if accepted_inv > 0
             #log fulfillment
-            row.amount -= accepted_inv #update x.open_orders (deduct fulfilled part of the order)
+            row.amount = floor(row.amount - accepted_inv, digits=x.options[:numerical_precision]) #update x.open_orders (deduct fulfilled part of the order)
             x.tmp[src,mat,:on_hand] -= accepted_inv #remove inventory from site
             push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :sent)) #log order as sent
             push!(x.fulfillments, (row.id, x.period, row.arc, mat, accepted_inv, :delivered)) #log order as delivered
@@ -88,7 +88,7 @@ function fulfill_from_production!(
         accepted_prod = accepted_production(row.amount, cap_and_sup, partial_fulfillment) #amount accepted
         if accepted_prod > 0
             #fulfill order (may be partial)
-            row.amount -= accepted_prod #update x.open_orders (deduct fulfilled quantity)
+            row.amount = floor(row.amount - accepted_prod, digits=x.options[:numerical_precision]) #update x.open_orders (deduct fulfilled quantity)
             #consume reactant
             for rmat in rmat_names
                 consume_reactant!(x, row.id, src, rmat, bom[rmat,mat], accepted_prod, raw_orders_grp) 

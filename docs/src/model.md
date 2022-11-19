@@ -114,6 +114,7 @@ This function takes the following inputs:
   - `evaluate_profit::Bool = true`: the simulation will calculate the proft at each node if `true` and save the results in `SupplyChainEnv.profit`.
 - Aditional Keyword Arguments:
   - `discount::Float64 = 0.`: discount factor (i.e., interest rate) to account for the time-value of money.
+  - `numerical_precision::Int = 6`: Numerical precision (number of digits) for external demand sampling.
   - `seed::Int = 0`: random seed for simulation.
 
 ## Simulation Outputs

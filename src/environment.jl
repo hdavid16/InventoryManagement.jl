@@ -29,6 +29,7 @@ abstract type AbstractEnv end
   - `capacitated_inventory::Bool`: Indicator if inventory limits should be enforced.
   - `guaranteed_service::Bool`: Indicator if simulation should force lost sales after service lead time expires.
   - `adjusted_stock::Bool`: Indicator if the inventory position and echelon stocks should account for orders that have been placed, but are not yet due.
+  - `numerical_precision::Int`: Numerical precision (number of digits) for external demand sampling.
 - `seed::Int`: Random seed.
 """
 mutable struct SupplyChainEnv <: AbstractEnv
@@ -60,7 +61,8 @@ end
         backlog::Bool=true, reallocate::Bool=false, 
         guaranteed_service::Bool=false, adjusted_stock::Bool=true,
         capacitated_inventory::Bool=true,
-        evaluate_profit::Bool=true, discount::Float64=0., seed::Int=0
+        evaluate_profit::Bool=true, discount::Float64=0., 
+        numerical_precision::Int=6, seed::Int=0
     )
 
 Create a `SupplyChainEnv` from a directed graph with metadata (`MetaDiGraph`).
@@ -70,7 +72,8 @@ function SupplyChainEnv(
     backlog::Bool=true, reallocate::Bool=false, 
     guaranteed_service::Bool=false, adjusted_stock::Bool=true,
     capacitated_inventory::Bool=true,
-    evaluate_profit::Bool=true, discount::Float64=0., seed::Int=0
+    evaluate_profit::Bool=true, discount::Float64=0., 
+    numerical_precision::Int=6, seed::Int=0
 )
     #copy network (avoids issues when changing say num_periods after the Env was already created)
     net = copy(network)
@@ -94,7 +97,8 @@ function SupplyChainEnv(
         :evaluate_profit => evaluate_profit,
         :capacitated_inventory => capacitated_inventory,
         :guaranteed_service => guaranteed_service,
-        :adjusted_stock => adjusted_stock
+        :adjusted_stock => adjusted_stock,
+        :numerical_precision => numerical_precision
     )
     #create environment
     env = SupplyChainEnv(
