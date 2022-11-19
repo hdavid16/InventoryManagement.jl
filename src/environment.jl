@@ -193,6 +193,7 @@ function create_logging_dfs(net::MetaDiGraph, tmp::Dict)
     #outstanding orders
     open_orders = DataFrame(
         id = Int[],
+        created = Int[],
         due = Int[],
         arc = Tuple[],
         material = Any[],

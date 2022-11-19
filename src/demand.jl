@@ -95,7 +95,7 @@ Create and log order.
 function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat::Material, amount::Real, service_lead_time::Real)
     x.num_orders += 1 #create new order ID
     push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,req), mat, amount, missing]) #update order history
-    push!(x.open_orders, [x.num_orders, service_lead_time, (sup,req), mat, amount]) #add order to temp order df
+    push!(x.open_orders, [x.num_orders, x.period, service_lead_time, (sup,req), mat, amount]) #add order to temp order df
     #create raw material consumption and coproduction orders
     if (sup == req && isproduced(x,sup,mat)) || (req == :market && ismto(x,sup,mat))
         bom = get_prop(x.network, sup, :bill_of_materials)
@@ -103,11 +103,11 @@ function create_order!(x::SupplyChainEnv, sup::Int, req::Union{Int,Symbol}, mat:
         cmat_names = names(filter(>(0), bom[:,mat]), 1) #names of raw materials
         for rmat in rmat_names
             push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat], missing]) #update order history
-            push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]])
+            push!(x.open_orders, [x.num_orders, x.period, service_lead_time, (sup,:consumption), rmat, -amount*bom[rmat,mat]])
         end
         for cmat in cmat_names
             push!(x.orders, [x.num_orders, x.period, x.period + service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat], missing]) #update order history
-            push!(x.open_orders, [x.num_orders, service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat]])
+            push!(x.open_orders, [x.num_orders, x.period, service_lead_time, (sup,:coproduction), cmat, amount*bom[cmat,mat]])
         end
     end
 end
@@ -136,7 +136,7 @@ function relevant_orders(x::SupplyChainEnv, src::Int, dsts::Vector{Int}, mat::Ma
         rel_orders, #NOTE: Can add customer priority when sorting
         [
             order(:due, by = t -> iszero(t) ? -Inf : t), #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), 
-            :id, #then rank by order creation date (id)
+            :created, #then rank by order creation date
             order(:arc, by = a -> findfirst(==(a[2]), customer_priority)), #prioritize by customer priority
         ], #NOTE: ASSUME SORT FIRST BY TIME AND THEN BY PRIORITY!
         view=true
@@ -146,7 +146,7 @@ function relevant_orders(x::SupplyChainEnv, src::Int, dst::Int, mat::Material)
     rel_orders = all_relevant_orders(x,src,dst,mat) #assume production at plant accepts early fulfillment
     sort( #return sorted by soonest due date
         rel_orders, 
-        [order(:due, by = t -> iszero(t) ? -Inf : t), :id], #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date (id)
+        [order(:due, by = t -> iszero(t) ? -Inf : t), :created], #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date
         view=true
     ) 
 end
@@ -158,7 +158,7 @@ function relevant_orders(x::SupplyChainEnv, src::Int, dst::Symbol, mat::Material
     end
     sort( #return sorted by soonest due date
         rel_orders, 
-        [order(:due, by = t -> iszero(t) ? -Inf : t), :id], #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date (id)
+        [order(:due, by = t -> iszero(t) ? -Inf : t), :created], #give highest priority to order due now (due = 0), then rank by due date (expired orders if any are ranked higher), then rank by order creation date
         view=true
     ) 
 end
