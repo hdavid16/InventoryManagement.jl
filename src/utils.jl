@@ -1,9 +1,9 @@
 """
-    isproduced(net::Union{MetaDiGraph,SupplyChainEnv}, n::Int, mat::Union{Symbol,String})
+    isproduced(net::Union{MetaDiGraph,SupplyChainEnv}, n::Int, mat::Material)
 
 Check if material `mat` is produced in node `n`.
 """
-function isproduced(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
+function isproduced(net::MetaDiGraph, n::Int, mat::Material)
     !(:bill_of_materials in keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
     !(mat in names(bom,2)) && return false #mat is not produced at this plant
@@ -15,11 +15,11 @@ end
 isproduced(env::SupplyChainEnv, n, mat) = isproduced(env.network,n,mat)
 
 """
-    isconsumed(net::Union{MetaDiGraph,SupplyChainEnv}, n::Int, mat::Union{Symbol,String})
+    isconsumed(net::Union{MetaDiGraph,SupplyChainEnv}, n::Int, mat::Material)
 
 Check if material `mat` is consumed in node `n`.
 """
-function isconsumed(net::MetaDiGraph, n::Int, mat::Union{Symbol,String})
+function isconsumed(net::MetaDiGraph, n::Int, mat::Material)
     !(:bill_of_materials in keys(props(net,n))) && return false #n is not a plant
     bom = get_prop(net, n, :bill_of_materials)
     !(mat in names(bom,1)) && return false #mat is not consumed at this plant
@@ -31,11 +31,11 @@ end
 isconsumed(env::SupplyChainEnv, n, mat) = isconsumed(env.network,n,mat)
 
 """
-    ismto(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+    ismto(x::SupplyChainEnv, n::Int, mat::Material)
 
 Check if material `mat` is make-to-order in node `n`.
 """
-function ismto(x::SupplyChainEnv, n::Int, mat::Union{Symbol,String})
+function ismto(x::SupplyChainEnv, n::Int, mat::Material)
     !(:make_to_order in keys(props(x.network,n))) && return false #n is not a plant
     mto = get_prop(x.network, n, :make_to_order)
     return mat in mto
@@ -44,7 +44,7 @@ end
 """
     get_capacity_and_supply(
         x::SupplyChainEnv, n::Int, 
-        mat::Union{Symbol,String}, bom::NamedArray, 
+        mat::Material, bom::NamedArray, 
         rmat_names::Vector, cmat_names::Vector, 
         capacities::Dict
     )
@@ -53,7 +53,7 @@ Get available capacity and material supply at producer.
 """
 function get_capacity_and_supply(
     x::SupplyChainEnv, n::Int, 
-    mat::Union{Symbol,String}, bom::NamedArray, 
+    mat::Material, bom::NamedArray, 
     rmat_names::Vector, cmat_names::Vector, 
     capacities::Dict
 )

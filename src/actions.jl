@@ -38,7 +38,7 @@ function (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
     #receive incoming orders
     update_shipments!(x)
     #place requests
-    place_orders!(x, act)
+    replenishment_orders!(x, act)
     #discard any excess inventory
     x.options[:capacitated_inventory] && enforce_inventory_limits!(x)
     #markets open and demand occurs

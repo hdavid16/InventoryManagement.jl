@@ -1,5 +1,5 @@
 """
-    inventory_balance(env::SupplyChainEnv, node::Int, material::Union{Symbol,String}, inventory_type::Symbol = :on_hand)
+    inventory_balance(env::SupplyChainEnv, node::Int, material::Material, inventory_type::Symbol = :on_hand)
 
 Create a `DataFrame` logging the following in each period:
 1) opening inventory (for the specified inventory type; options: `:on_hand`, `:level`, or `:position`)
@@ -10,7 +10,7 @@ Create a `DataFrame` logging the following in each period:
 6) arrivals from upstream suppliers 
 7) unfulfilled demand
 """
-function inventory_balance(env::SupplyChainEnv, node::Int, material::Union{Symbol,String}, inventory_type::Symbol = :on_hand)
+function inventory_balance(env::SupplyChainEnv, node::Int, material::Material, inventory_type::Symbol = :on_hand)
     #on_hand inventory
     balance = opening_inventory(env,node,material,inventory_type)
     #external demand
@@ -42,11 +42,11 @@ function inventory_balance(env::SupplyChainEnv, node::Int, material::Union{Symbo
 end
 
 """
-    opening_inventory(env::SupplyChainEnv, node::Int, material::Union{Symbol,String}, inventory_type::Symbol)
+    opening_inventory(env::SupplyChainEnv, node::Int, material::Material, inventory_type::Symbol)
 
 Create a `DataFrame` with the inventory time series.
 """
-function opening_inventory(env::SupplyChainEnv, node::Int, material::Union{Symbol,String}, inventory_type::Symbol)
+function opening_inventory(env::SupplyChainEnv, node::Int, material::Material, inventory_type::Symbol)
     @assert inventory_type in [:on_hand, :level, :position] "Invalid `inventory_type` passed. Valid options are `:on_hand`, `:level`, or `:position`"
     @chain env.inventory begin
         subset( #filter inventory type, node, material
@@ -61,11 +61,11 @@ function opening_inventory(env::SupplyChainEnv, node::Int, material::Union{Symbo
 end
 
 """
-    external_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String})
+    external_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material)
 
 Append the external demand at each period to the `balance` DataFrame.
 """
-external_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) =
+external_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material) =
     @chain env.orders begin
         subset( #get market orders for that material at that node
             :arc => ByRow(==((node,:market))),
@@ -78,11 +78,11 @@ external_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::U
     end
 
 """
-    external_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, material::Union{Symbol,String})
+    external_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, material::Material)
 
 Append the external demand fulfillment at each period to the `balance` DataFrame.
 """
-external_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) = 
+external_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, material::Material) = 
     @chain env.fulfillments begin
         subset( #get order fulfillments
             :type => ByRow(==(:sent)), #fulfilled when sent
@@ -96,11 +96,11 @@ external_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, materia
     end
 
 """
-    internal_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String})
+    internal_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material)
 
 Append the internal demand at each period to the `balance` DataFrame.
 """
-internal_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) =
+internal_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material) =
     @chain env.orders begin
         subset( #get downstream orders
             :arc => ByRow(a -> a[1] == node && a[2] != :market),
@@ -113,11 +113,11 @@ internal_demand!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::U
     end
 
 """
-    internal_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, material::Union{Symbol,String})
+    internal_fulfillment!(balance::DataFrame,env::SupplyChainEnv, node::Int, material::Material)
 
 Append the internal demand fulfillment at each period to the `balance` DataFrame.
 """
-internal_fulfillment!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) = 
+internal_fulfillment!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material) = 
     @chain env.fulfillments begin
         subset( #get order fulfillments
             :type => ByRow(==(:sent)), #fulfilled when sent
@@ -131,11 +131,11 @@ internal_fulfillment!(balance::DataFrame, env::SupplyChainEnv, node::Int, materi
     end
 
 """
-    replenishments!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String})
+    replenishments!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material)
 
 Append the arrived replenishments at each period to the `balance` DataFrame
 """
-replenishments!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) = 
+replenishments!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material) = 
     @chain env.fulfillments begin
         subset( #get arrivals
             :type => ByRow(==(:delivered)),
@@ -149,11 +149,11 @@ replenishments!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Un
     end
 
 """
-    unfulfilled!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) = 
+    unfulfilled!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material) = 
 
 Append total unfulfilled demand at each period to the `balance` DataFrame
 """
-unfulfilled!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Union{Symbol,String}) = 
+unfulfilled!(balance::DataFrame, env::SupplyChainEnv, node::Int, material::Material) = 
     @chain env.inventory begin
         subset( #filter inventory type, node, material
             :type => ByRow(==(:unfulfilled)), 

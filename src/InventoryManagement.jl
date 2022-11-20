@@ -8,6 +8,8 @@ using Distributions
 using LinearAlgebra
 import StatsBase: mean, std
 
+const Material = Union{String, Symbol}
+
 @reexport using Graphs
 @reexport using MetaGraphs
 

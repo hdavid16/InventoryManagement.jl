@@ -8,7 +8,7 @@ NOTE:
 - If reallocation occurs, any fulfilled reallocated order is not counted
 - Node specific metrics are not pooled
 """
-function calculate_service_measures!(env::SupplyChainEnv; window::Tuple=(0,Inf), metrics::Tuple=(:service_levels,:fill_rates))
+function calculate_service_measures!(env::SupplyChainEnv; window::Tuple=(0,env.period), metrics::Tuple=(:service_levels,:fill_rates))
     @assert window[1] <= window[2] "`window` is not valid (lb > ub)."
     if window[1] >= env.period
         @warn "Service measure window outside of simulation time. `calculate_service_measures! not called."
@@ -19,7 +19,7 @@ function calculate_service_measures!(env::SupplyChainEnv; window::Tuple=(0,Inf),
         orders_df = env.orders
         fulfillments_df = env.fulfillments
     else
-        orders_df = filter(:created => t -> window[1] <= t <= window[2], env.orders, view = true)
+        orders_df = filter([:created,:due] => (c,d) -> window[1] <= c && d <= window[2], env.orders, view = true)
         id_set = Set(orders_df.id)
         fulfillments_df = filter(:id => in(id_set), env.fulfillments, view=true)
     end

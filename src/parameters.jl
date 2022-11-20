@@ -47,8 +47,9 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
     truncate_flag, roundoff_flag, replace_flag = false, false, false
     
     #run checks on the parameter inputs
-    nonsources = [n for n in nodes if !isempty(inneighbors(network, n))] #list of nodes with predecessors
-    env_keys = map_env_keys(nodes, arcs, mrkts, plants, nonsources) #dictionary with parameter keys for each node
+    nonsources = filter(n -> !isempty(inneighbors(network, n)), nodes) #list of nodes with predecessors
+    nonsinks = filter(n -> !isempty(outneighbors(network, n)), nodes) #list of nodes with successors
+    env_keys = map_env_keys(nodes, arcs, mrkts, plants, nonsources, nonsinks) #dictionary with parameter keys for each node
     for obj in keys(env_keys), key in env_keys[obj]
         if key == :bill_of_materials #check bill of materials (node specific)
             check_bill_of_materials!(network, obj)
@@ -66,6 +67,8 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
                 param = param_dict[mat]
                 if key == :supplier_priority
                     param_dict = check_supplier_priority(network, obj, mat)
+                elseif key == :customer_priority
+                    param_dict = check_customer_priority(network, obj, mat)
                 elseif key in [:demand_distribution, :lead_time, :service_lead_time]
                     param_dict, replace_flag, truncate_flag, roundoff_flag = check_stochastic_variable!(network, key, obj, mat)
                 else
@@ -81,11 +84,11 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
 end
 
 """
-    map_env_keys(nodes::Vector, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
+    map_env_keys(nodes::Vector, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector, nonsinks::Vector)
 
 Create a dictionary with the parameter keys for each node/arc in the network
 """
-function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector)
+function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector, nonsinks::Vector)
     #lists of parameter keys
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
     market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :service_lead_time, :market_partial_fulfillment, :market_early_fulfillment]
@@ -112,6 +115,9 @@ function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Ve
     for node in nodes
         if node in nonsources
             push!(env_keys[node], :supplier_priority, :partial_fulfillment, :early_fulfillment)
+        end
+        if node in nonsinks
+            push!(env_keys[node], :customer_priority)
         end
     end
 
@@ -189,18 +195,20 @@ function check_make_to_order!(network::MetaDiGraph, n::Int)
 end
 
 """
-    set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
+    set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Material)
 
 Set parameter defaults.
 """
-function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
+function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Material)
     param_dict = get_prop(network, obj..., key)
     if key in [:inventory_capacity, :production_capacity] #default is uncapacitated
         set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
     elseif key == :demand_frequency #demand at every period
         merge!(param_dict, Dict(mat => 1))
     elseif key == :supplier_priority #random ordering of supplier priority
-        merge!(param_dict, Dict(mat => inneighbors(network, obj) |> pred -> obj in pred ? [obj] ∪ pred : pred))
+        merge!(param_dict, Dict(mat => inneighbors(network, obj) |> pred -> obj in pred ? [obj] ∪ pred : pred)) #if producer, set itself as first supplier priority
+    elseif key == :customer_priority #random ordering of customer priority
+        merge!(param_dict, Dict(mat => sort(setdiff(outneighbors(network, obj),[obj]))))
     elseif key == :partial_fulfillment #allow partial fulfillment by default
         merge!(param_dict, Dict(mat => true))
     elseif key == :market_partial_fulfillment #allow partial fulfillment by default
@@ -218,11 +226,11 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
 end
 
 """
-    check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Union{Symbol,String})
+    check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Material)
 
 Validate supplier priority input.
 """
-function check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Union{Symbol,String})
+function check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Material)
     param_dict = get_prop(network, obj, :supplier_priority)
     param = param_dict[mat]
     #if singleton is provided, put it in a Vector
@@ -230,18 +238,32 @@ function check_supplier_priority(network::MetaDiGraph, obj::Int, mat::Union{Symb
         set_prop!(network, obj, :supplier_priority, merge(param_dict, Dict(mat => [param])))
     end
     #check suppliers are connected to that node
-    param_dict = get_prop(network, obj..., :supplier_priority)
+    param_dict = get_prop(network, obj, :supplier_priority)
+    unique!(param_dict[mat]) #remove any duplicates
     @assert param_dict[mat] ⊆ inneighbors(network, obj) "One or more suppliers listed in the supplier priority of node $obj is not a predecessor of that node."
 
     return param_dict
 end
+"""
+    check_customer_priority(network::MetaDiGraph, obj::Int, mat::Material)
+
+Validate customer priority input.
+"""
+function check_customer_priority(network::MetaDiGraph, obj::Int, mat::Material)
+    param_dict = get_prop(network, obj, :customer_priority)
+    unique!(param_dict[mat]) #remove any duplicates
+    @assert Set(param_dict[mat]) == Set(setdiff(outneighbors(network, obj), [obj])) "The customer priority list for node $obj must contain every successor to that node."
+
+    return param_dict
+end
+
 
 """
-    check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
+    check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Material)
 
 Validate inputs for stochastic variables (lead time, demand quantity).
 """
-function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String})
+function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple}, mat::Material)
     param_dict = get_prop(network, obj..., key)
     param = param_dict[mat]
     #if singleton is provided, put it in a Vector
@@ -272,12 +294,12 @@ function check_stochastic_variable!(network::MetaDiGraph, key::Symbol, obj::Unio
 end
 
 """
-    update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, value::Any)
+    update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Union{Int, Tuple}, mat::Material, value::Any)
 
 Allows updating the value of one of the stochastic parameters (key options: `:demand_distribution`, `:lead_time`, `:service_lead_time`)
 along `obj` (arc or node) for material `mat`.
 """
-function update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Union{Int, Tuple}, mat::Union{Symbol,String}, value::Any)
+function update_stochastic_parameter!(env::SupplyChainEnv, key::Symbol, obj::Union{Int, Tuple}, mat::Material, value::Any)
     network = env.network #get network
     truncate_flag, roundoff_flag, replace_flag = false, false, false #initialize flags
     param_dict = get_prop(network, obj..., key) #get parameter dictionary
