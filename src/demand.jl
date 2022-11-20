@@ -49,7 +49,7 @@ function replenishment_orders!(x::SupplyChainEnv, act::NamedArray)
                 end
             end
             #fulfill production orders
-            if sup in x.producers 
+            if sup in x.producers && isproduced(x.network, sup, mat)
                 lead = leads[Edge(sup,sup), mat] #sampled lead time
                 fulfill_from_production!(x, sup, sup, mat, lead, capacities[sup])
             end 
