@@ -33,10 +33,6 @@ export update_stochastic_parameter!
 export isproduced, isconsumed, material_graph
 export calculate_service_measures!
 export inventory_balance, normal_base_stock
-export  
-    SimpleDiGraph, path_digraph, star_digraph, wheel_digraph, 
-    edges, vertices, inneighbors, outneighbors,
-    AbstractGraph,
-    MetaDiGraph, set_prop!, set_props!, set_indexing_prop!
+export MetaDiGraph, set_prop!, set_props!
 
 end
