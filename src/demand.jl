@@ -16,7 +16,7 @@ function replenishment_orders!(x::SupplyChainEnv, act::NamedArray)
     #identify nodes that can place requests
     supplier_nodes = filter( #nodes supplying inventory
         n -> !isempty(outneighbors(x.network, n)), #exclude sink nodes
-        topological_sort(x.network) #sort nodes in topological order so that orders are placed moving down the network
+        sort_topological(x.network) #sort nodes in topological order so that orders are placed moving down the network
     )
     #get copy of existing open orders
     orders_grp = groupby(copy(x.open_orders), [:arc, :material])

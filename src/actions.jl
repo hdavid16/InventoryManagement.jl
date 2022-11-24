@@ -1,22 +1,4 @@
 """
-    (x::SupplyChainEnv, action::Vector{T} where T <: Real)
-
-Convert a replenishment order vector into a NamedArray indicating how much of
-each material (rows) is being requested on each arc (columns).
-"""
-function show_action(x::SupplyChainEnv, action::Vector{T} where T <: Real)
-    mats = x.materials
-    arcs = [(e.src, e.dst) for e in edges(x.network)]
-    action_named_array = NamedArray(
-        reshape(action, (length(mats), length(arcs))),
-        (x.materials, arcs),
-        (:material, :arc)
-    )
-    
-    return action_named_array
-end
-
-"""
     (x::SupplyChainEnv)(action::Vector{T} where T <: Real)
 
 Apply an `action` (replenishment requests) on the `SupplyChainEnv` and step

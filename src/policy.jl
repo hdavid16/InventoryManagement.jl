@@ -29,7 +29,7 @@ function reorder_policy(env::SupplyChainEnv, reorder_point::Dict, policy_param::
     !isvalid_period(env.period, review_period) && return null_action
 
     #read parameters
-    nodes = reverse(topological_sort(env.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
+    nodes = reverse(sort_topological(env.network)) #sort nodes in reverse topological order so that orders are placed moving up the network
     request_nodes = filter(n -> !isempty(inneighbors(env.network, n)), nodes) #nodes placing requests (all non-source nodes: can't place replenishment orders)
     supply_nodes = filter(n -> !isempty(outneighbors(env.network, n)), nodes) #nodes fulfilling requests (all non-sink nodes; used for MOQ). sink nodes can't fulfill replenishment orders.
     arcs = [(e.src, e.dst) for e in edges(env.network)]

@@ -1,17 +1,15 @@
 module InventoryManagement
 
 using DataFrames, NamedArrays, SparseArrays
-using Reexport, Chain
+using Chain
 using Random
 using IntervalSets
 using Distributions
 using LinearAlgebra
+using Graphs, MetaGraphs
 import StatsBase: mean, std
 
 const Material = Union{String, Symbol}
-
-@reexport using Graphs
-@reexport using MetaGraphs
 
 include("environment.jl")
 include("actions.jl")
@@ -27,12 +25,18 @@ include("spaces.jl")
 include("utils.jl")
 include("balance.jl")
 
-export SupplyChainEnv, reset!, is_terminated, action_space, show_action
+export SupplyChainEnv, reset!, reward, is_terminated
+export state, state_space, action_space, show_action, show_state
 export reorder_policy, simulate_policy!
 export connect_nodes!
 export update_stochastic_parameter!
 export isproduced, isconsumed, material_graph
 export calculate_service_measures!
 export inventory_balance, normal_base_stock
+export  
+    SimpleDiGraph, path_digraph, star_digraph, wheel_digraph, 
+    edges, vertices, inneighbors, outneighbors,
+    AbstractGraph,
+    MetaDiGraph, set_prop!, set_props!, set_indexing_prop!
 
 end
