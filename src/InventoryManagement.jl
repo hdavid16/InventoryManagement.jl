@@ -4,10 +4,10 @@ using DataFrames, NamedArrays, SparseArrays
 using Chain
 using Random
 using IntervalSets
-using Distributions
 using LinearAlgebra
 using Graphs, MetaGraphs
 import StatsBase: mean, std
+import Distributions: Bernoulli, truncated, Sampleable, Distribution, Continuous
 
 const Material = Union{String, Symbol}
 
