@@ -74,11 +74,11 @@ function get_capacity_and_supply(
 end
 
 """
-    topological_sort(net::MetaDiGraph)
+    sort_topological(net::MetaDiGraph)
 
 Break self-loops and perform topological sort.
 """
-topological_sort(net::MetaDiGraph) = topological_sort_by_dfs(remove_self_loops(net))
+sort_topological(net::MetaDiGraph) = topological_sort_by_dfs(remove_self_loops(net))
 
 """
     remove_self_loops(net::MetaDiGraph)

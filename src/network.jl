@@ -1,5 +1,5 @@
 """
-    connect_nodes!(net::MetaDiGraph, arcs...)
+    connect_nodes!(net::AbstractGraph, arcs...)
 
 Connect nodes identified by `arc` pairs (e.g., `1 => 2`).
 """

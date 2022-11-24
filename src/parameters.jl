@@ -42,6 +42,7 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
     nodes = vertices(network) #network nodes
     arcs = [(e.src,e.dst) for e in edges(network)] #network edges as Tuples (not Edges)
     mats = get_prop(network, :materials) #materials
+    sort!(mats)
 
     #initialize flags
     truncate_flag, roundoff_flag, replace_flag = false, false, false
@@ -327,7 +328,7 @@ function store_node_materials!(network::MetaDiGraph, plants::Vector)
         if n in plants
             bom = get_prop(network, n, :bill_of_materials)
             mat_graph = material_graph(bom)
-            mat_nodes = topological_sort(mat_graph)
+            mat_nodes = sort_topological(mat_graph)
             mat_node_names = [mat_graph[i,:name] for i in mat_nodes]
             n_mats = mat_node_names ∪ n_mats
         end

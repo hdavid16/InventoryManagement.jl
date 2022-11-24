@@ -77,13 +77,13 @@ function SupplyChainEnv(
 )
     #copy network (avoids issues when changing say num_periods after the Env was already created)
     net = copy(network)
+    #check inputs
+    mrkts, plants = identify_nodes(net) #identify nodes 
+    check_inputs!(net, mrkts, plants)
     #get model parameters
     nodes = vertices(net) #network nodes
     echelons = Dict(n => identify_echelons(net, n) for n in nodes) #get nodes in each echelon
     mats = get_prop(net, :materials) #materials
-    mrkts, plants = identify_nodes(net) #identify nodes 
-    #check inputs
-    check_inputs!(net, mrkts, plants)
     #create current and previous inventory placeholders
     tmp = create_temp_placeholders(net, echelons)
     #create logging dataframes
@@ -144,6 +144,13 @@ Check if a simulation has terminated (i.e., has reached the maximum number of pe
 """
 is_terminated(env::SupplyChainEnv) = env.period == env.num_periods
 
+"""
+    reward(env::SupplyChainEnv)
+
+Get reward from simulation.
+"""
+reward(env::SupplyChainEnv) = env.reward
+
 "Set the random seed for a simulation."
 Random.seed!(env::SupplyChainEnv) = Random.seed!(env.seed)
 
@@ -173,6 +180,7 @@ function create_logging_dfs(net::MetaDiGraph, tmp::Dict)
             push!(inventory, (0, n, p, tmp[n,p,:on_hand], :position))
             push!(inventory, (0, n, p, tmp[n,p,:on_hand], :level))
             push!(inventory, (0, n, p, tmp[n,p,:echelon], :echelon))
+            push!(inventory, (0, n, p, tmp[n,p,:unfulfilled], :unfulfilled))
         end
     end
 
