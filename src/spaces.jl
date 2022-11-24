@@ -1,26 +1,16 @@
 function action_space(env::SupplyChainEnv)
     num_products = length(env.materials)
     num_edges = ne(env.network)
-    return [Interval{:closed,:open}(0,Inf) for _ in num_products*num_edges]
+    return [Interval{:closed,:open}(0,Inf) for _ in 1:num_products*num_edges]
 end
 
-function state(env::SupplyChainEnv)
-    typeset = Set([:on_hand,:pipeline,:unfulfilled])
-    return sort(
-        subset(env.inventory, 
-            :period => ByRow(==(env.period)),
-            :type => ByRow(in(typeset)),
-            view=true
-        ),
-        [:type,:location,:material]
-    ).amount
-end
+state(env::SupplyChainEnv) = show_state(env).amount
 
 function state_space(env::SupplyChainEnv)
     num_products = length(env.materials)
     num_nodes = nv(env.network)
-    num_types = 3 #onhand, pipeline, unfulfilled
-    return [Interval{:closed,:open}(0,Inf) for _ in num_products*num_nodes*num_types]
+    num_arcs = ne(env.network)
+    return [Interval{:closed,:open}(0,Inf) for _ in 1:num_products*(num_nodes*2+num_arcs)] #onhand and unfulfilled for each node and pipeline for each arc
 end
 
 """
@@ -46,12 +36,18 @@ Show the system state as a DataFrame.
 """
 function show_state(x::SupplyChainEnv)
     typeset = Set([:on_hand,:pipeline,:unfulfilled])
-    return sort(
-        subset(x.inventory, 
+    @chain x.inventory begin
+        subset( 
             :period => ByRow(==(x.period)),
             :type => ByRow(in(typeset)),
-            view=true
-        ),
-        [:type,:location,:material]
-    )
+        )
+        transform!(
+            AsTable([:location,:type]) => ByRow(identity) => :location_type
+        )
+        unstack(:location_type,:material,:amount,fill=0)
+        stack(Not(:location_type), variable_name = :material, value_name = :amount)
+        transform!(:location_type => AsTable)
+        select!([:type,:location,:material,:amount])
+        sort!([:type,:location,:material])
+    end
 end
