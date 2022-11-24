@@ -1,4 +1,5 @@
 #2-echelon system with variable demand
+import Graphs: path_digraph
 using Distributions
 using InventoryManagement
 using StatsBase
