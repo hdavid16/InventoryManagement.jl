@@ -50,7 +50,7 @@ num_periods = 100
 env = SupplyChainEnv(net, num_periods, backlog = true, reallocate = true)
 simulate_policy!(env, s, S; policy_variable, policy_type, review_period)
 
-#make plots
+##make plots
 using DataFramesMeta, StatsPlots
 #profit
 fig1 = @chain env.profit begin
