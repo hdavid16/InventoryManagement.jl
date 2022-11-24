@@ -42,7 +42,8 @@ function replenishment_orders!(x::SupplyChainEnv, act::NamedArray)
                 #create order and save service lead time
                 for arc in arcs
                     amount = act[mat, arc] #amount requested
-                    if amount > 0
+                    arc_mats = get_prop(x.network, arc..., :arc_materials)
+                    if amount > 0 && mat in arc_mats
                         serv = servs[Edge(arc...), mat] #sampled service lead time
                         create_order!(x, arc..., mat, amount, serv)
                     end

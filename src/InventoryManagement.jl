@@ -4,7 +4,6 @@ using DataFrames, NamedArrays, SparseArrays
 using Chain
 using Random
 using Distributions
-using IntervalSets
 using LinearAlgebra
 using Graphs, MetaGraphs
 import StatsBase: mean, std

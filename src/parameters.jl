@@ -42,11 +42,12 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
     nodes = vertices(network) #network nodes
     arcs = [(e.src,e.dst) for e in edges(network)] #network edges as Tuples (not Edges)
     mats = get_prop(network, :materials) #materials
-    sort!(mats)
+    sort!(mats) #sort alphabetically
+    store_arc_materials!(network) #store materials that have a lead time on each arc
 
     #initialize flags
     truncate_flag, roundoff_flag, replace_flag = false, false, false
-    
+
     #run checks on the parameter inputs
     nonsources = filter(n -> !isempty(inneighbors(network, n)), nodes) #list of nodes with predecessors
     nonsinks = filter(n -> !isempty(outneighbors(network, n)), nodes) #list of nodes with successors
@@ -313,6 +314,7 @@ end
 
 """
     store_node_materials!(network::MetaDiGraph, plants::Vector)
+
 Record which materials have non-zero capacity at each node (can be stored at that node).
 This improves performance for simulations with many materials. Sort in materials in topological order 
     for plant nodes to account for any make-to-order intermediates.
@@ -335,3 +337,18 @@ function store_node_materials!(network::MetaDiGraph, plants::Vector)
         set_prop!(network, n, :node_materials, n_mats)
     end
 end 
+
+"""
+    store_arc_materials!(network::MetaDiGraph)
+
+Sore the materials that have a specified lead time on each arc.
+"""
+function store_arc_materials!(network::MetaDiGraph)
+    materials = get_prop(network, :materials)
+    for e in edges(network)
+        if :lead_time in keys(props(network, e))
+            arc_mats = Set(keys(get_prop(network, e, :lead_time)))
+            set_prop!(network, e, :arc_materials, arc_mats ∩ materials)
+        end
+    end
+end

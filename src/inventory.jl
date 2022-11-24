@@ -146,7 +146,9 @@ function update_dfs!(x::SupplyChainEnv)
             push!(x.inventory, (x.period, n, m, x.tmp[n,m,:echelon], :echelon))
             for dst in outneighbors(x.network, n)
                 arc = (n,dst)
-                push!(x.inventory, (x.period, arc, m, x.tmp[arc,m,:pipeline], :pipeline))
+                if m in get_prop(x.network,arc...,:arc_materials)
+                    push!(x.inventory, (x.period, arc, m, x.tmp[arc,m,:pipeline], :pipeline))
+                end
             end
         end
     end
