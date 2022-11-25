@@ -11,7 +11,7 @@ function replenishment_orders!(x::SupplyChainEnv, act::NamedArray)
     #store original production capacities (to account for commited capacity and commited inventory in next section)
     capacities = Dict(n => get_prop(x.network, n, :production_capacity) for n in x.producers)
     #sample lead times and service times
-    leads = Dict((a,mat) => ceil(Int,rand(get_prop(x.network, a, :lead_time)[mat])) for a in edges(x.network), mat in mats)
+    leads = Dict((a,mat) => get_lead_time(x,a,mat) for a in edges(x.network), mat in mats)
     servs = Dict((a,mat) => ceil(Int,rand(get_prop(x.network, a, :service_lead_time)[mat])) for a in edges(x.network), mat in mats)
     #identify nodes that can place requests
     supplier_nodes = filter( #nodes supplying inventory
@@ -264,20 +264,29 @@ function simulate_markets!(x::SupplyChainEnv)
     for n in x.markets
         dmnd_freq_dict = get_prop(x.network, n, :demand_frequency)
         dmnd_dist_dict = get_prop(x.network, n, :demand_distribution)
+        dmnd_data_dict = get_prop(x.network, n, :demand_data)
         serv_dist_dict = get_prop(x.network, n, :service_lead_time)
         n_mats = get_prop(x.network, n, :node_materials)
         for mat in n_mats
             #get demand parameters
-            p = dmnd_freq_dict[mat] #probability of demand occuring
-            dmnd = dmnd_dist_dict[mat] #demand distribution
             serv_lt = serv_dist_dict[mat] #service lead time
             last_order_id = x.num_orders #last order created in system
-            #place p orders
-            for _ in 1:floor(p) + rand(Bernoulli(p % 1)) #p is the number of orders. If fractional, the fraction is the likelihood of rounding up.
-                q = rand(dmnd) #sample demand
-                slt = ceil(Int,rand(serv_lt)) #sample service lead time
-                if q > 0
+            dmnd_data = dmnd_data_dict[mat] #demand data
+            if !isnothing(dmnd_data)
+                for q in dmnd_data[x.period]
+                    slt = ceil(Int,rand(serv_lt)) #sample service lead time
                     create_order!(x, n, :market, mat, q, slt)
+                end
+            else
+                p = dmnd_freq_dict[mat] #probability of demand occuring
+                dmnd = dmnd_dist_dict[mat] #demand distribution
+                #place p orders
+                for _ in 1:floor(p) + rand(Bernoulli(p % 1)) #p is the number of orders. If fractional, the fraction is the likelihood of rounding up.
+                    q = rand(dmnd) #sample demand
+                    slt = ceil(Int,rand(serv_lt)) #sample service lead time
+                    if q > 0
+                        create_order!(x, n, :market, mat, q, slt)
+                    end
                 end
             end
             #if no new orders were created, check if there are any pending orders; if not, the exit iteration
@@ -292,10 +301,14 @@ function simulate_markets!(x::SupplyChainEnv)
             #if MTO and lead time is 0, try to fulfill from production
             if last_order_id > x.num_orders && ismto(x,n,mat) #fulfill make-to-order from production if at least 1 new MTO created (NOTE: COULD RECHECK IF THERE IS ANY PENDING ORDER THAT WASN"T FULFILLED FROM STOCK)
                 lt_dist = get_prop(x.network, n, n, :lead_time)[mat]
-                if iszero(lt_dist)
-                    capacities = get_prop(x.network, n, :production_capacity)
-                    prod_lt = ceil(Int,rand(lt_dist))
-                    fulfill_from_production!(x, n, :market, mat, prod_lt, capacities)
+                lt_data = get_prop(x.network, n, n, :lead_time_data)[mat]
+                capacities = get_prop(x.network, n, :production_capacity)
+                if !isnothing(lt_data)
+                    if iszero(lt_data[x.period])
+                        fulfill_from_production!(x, n, :market, mat, 0, capacities)
+                    end
+                elseif iszero(lt_dist)
+                    fulfill_from_production!(x, n, :market, mat, 0, capacities)
                 end
             end
         end

@@ -35,8 +35,8 @@ set_props!(net, 1, 1, Dict(
 set_props!(net, 1, 2, Dict(
     :sales_price => Dict(:A => 2, :B => 1),
     :transportation_cost => Dict(:A => 0.01, :B => 0.01),
-    :lead_time => Dict(:A => 7, :B => 7))
-)
+    :lead_time => Dict(:A => 7, :B => 7)
+))
 
 #define reorder policy parameters
 policy_type = :sS #(s, S) policy

@@ -202,6 +202,7 @@ The graph metadata should have the following fields in its metadata:
 - `:supplier_priority::Dict`: (*only when the node has at least 1 supplier*) `Vector` of suppliers (from high to low priority) for each material (`keys`). When a request cannot be fulfilled due to insufficient production capacity or on-hand inventory, the system will try to reallocate it to the supplier that is next in line on the priority list (if `reallocate = true`). Default = `inneighbors(SupplyChainEnv.network, node)`.
 - `:demand_distribution::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the market demands for each material (`keys`). For deterministic demand, instead of using a probability distribution, use `D where D <: Number`. Default = `0`.
 - `:demand_frequency::Dict`: number of times demand occurs per period on average for each material (`keys`). Default = `1`.
+- `:demand_data::Dict`: Vector of orders for each period in the simulation, for each material (`keys`). For each period, a single order amount can be specified, or a `Tuple`/`Vector` of orders amounts. Demand data takes precedence over any demand distribution/demand frequency provided. Default = `nothing`.
 - `:sales_price::Dict`: market sales price for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied market demand for each material (`keys`). Default = `0`.
 - `:service_lead_time::Dict`: service lead time (probability distribution or deterministic value) allowed to fulfill market demand for each material (`keys`). Default = `0`.
@@ -214,6 +215,7 @@ All arcs have the following fields in their metadata:
 - `:pipeline_holding_cost::Dict`: unit holding cost per period for inventory in-transit for each material (`keys`). Default = `0`.
 - `:unfulfilled_penalty::Dict`: unit penalty for unsatisfied internal demand for each material (`keys`). Default = `0`.
 - `:lead_time::Dict`: probability distributions from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl) for the lead times for each material (`keys`) on that edge. Lead times are transportation times when the edge has two `distributor` nodes and production times when the edge joins the `producer` and `distributor` nodes in a plant. For deterministic lead times, instead of using a probability distribution, use `L where L  <: Number`. Default = `0`.
+- `:lead_time_data::Dict`: Vector of lead times with a non-negative value for each period in the simulation, for each material (`keys`) on that edge. Lead time data takes precedence over any lead time distribution/value. Default = `nothing`.
 - `:service_lead_time::Dict`: service lead time (probability distribution or deterministic value) allowed to fulfill (goods issue) internal demand for each material (`keys`). Default = `0`.
 
 ## Creating a Supply Chain Environment

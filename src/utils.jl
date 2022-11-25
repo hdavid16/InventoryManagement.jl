@@ -113,3 +113,17 @@ function material_graph(bill_of_materials::NamedArray)
 
     return g
 end
+
+"""
+    get_lead_time(x::SupplyChainEnv, arc::Edge, mat::Material)
+"""
+function get_lead_time(x::SupplyChainEnv, arc::Edge, mat::Material)
+    lt_data = get_prop(x.network, arc, :lead_time_data)[mat]
+    if !isnothing(lt_data)
+        lt = lt_data[x.period]
+    else
+        lt = rand(get_prop(x.network, arc, :lead_time)[mat])
+    end
+
+    return ceil(Int,lt)
+end

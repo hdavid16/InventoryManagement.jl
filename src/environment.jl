@@ -79,7 +79,7 @@ function SupplyChainEnv(
     net = copy(network)
     #check inputs
     mrkts, plants = identify_nodes(net) #identify nodes 
-    check_inputs!(net, mrkts, plants)
+    check_inputs!(net, mrkts, plants, num_periods)
     #get model parameters
     nodes = vertices(net) #network nodes
     echelons = Dict(n => identify_echelons(net, n) for n in nodes) #get nodes in each echelon
@@ -90,7 +90,6 @@ function SupplyChainEnv(
     logging_dfs = create_logging_dfs(net, tmp)
     #initialize other params
     period, reward, num_orders = 0, 0, 0
-    num_periods = num_periods
     options = Dict(
         :backlog => guaranteed_service ? true : backlog, #override backlog if guaranteed_service
         :reallocate => reallocate, 

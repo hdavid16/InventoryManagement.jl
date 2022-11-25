@@ -6,7 +6,7 @@ Identify market and producer nodes in the network.
 function identify_nodes(net::MetaDiGraph)
     nodes = vertices(net)
     #get end distributors, producers, and distribution centers
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty] #keys to identify a market
+    market_keys = [:demand_distribution, :demand_frequency, :demand_data, :sales_price, :unfulfilled_penalty] #keys to identify a market
     plant_keys = [:bill_of_materials, :production_capacity, :make_to_order] #keys to identify a plant (producer)
     mrkts = [n for n in nodes if !isempty(intersect(market_keys, keys(props(net,n))))]
     plants = [n for n in nodes if !isempty(intersect(plant_keys, keys(props(net,n))))]
@@ -33,11 +33,11 @@ function identify_echelons(network::MetaDiGraph, n::Int)
 end
 
 """
-    check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
+    check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector, num_periods::Int)
 
 Check inputs when creating a `SupplyChainEnv`.
 """
-function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
+function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector, num_periods::Int)
 
     nodes = vertices(network) #network nodes
     arcs = [(e.src,e.dst) for e in edges(network)] #network edges as Tuples (not Edges)
@@ -58,7 +58,9 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
         elseif key == :make_to_order
             check_make_to_order!(network, obj)
         else
-            !(key in keys(props(network, obj...))) && set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
+            if !(key in keys(props(network, obj...)))
+                set_prop!(network, obj..., key, Dict()) #create empty params for object if not specified
+            end
             param_dict = get_prop(network, obj..., key) #parameter dictionary
             for mat in mats
                 #set defaults
@@ -73,6 +75,8 @@ function check_inputs!(network::MetaDiGraph, mrkts::Vector, plants::Vector)
                     param_dict = check_customer_priority(network, obj, mat)
                 elseif key in [:demand_distribution, :lead_time, :service_lead_time]
                     param_dict, replace_flag, truncate_flag, roundoff_flag = check_stochastic_variable!(network, key, obj, mat)
+                elseif key in [:demand_data, :lead_time_data]
+                    !isnothing(param) && @assert length(param) == num_periods && all(union(param...) .>= 0) "A valid (non-negative) data point must be provided for every period in the simulation for $key at $obj."
                 else
                     @assert param isa Real && param >= 0 "Parameter $key for material $mat at $obj must be a non-negative `Real`."
                 end
@@ -93,9 +97,9 @@ Create a dictionary with the parameter keys for each node/arc in the network
 function map_env_keys(nodes::Base.OneTo, arcs::Vector, mrkts::Vector, plants::Vector, nonsources::Vector, nonsinks::Vector)
     #lists of parameter keys
     all_keys = [:initial_inventory, :inventory_capacity, :holding_cost]
-    market_keys = [:demand_distribution, :demand_frequency, :sales_price, :unfulfilled_penalty, :service_lead_time, :market_partial_fulfillment, :market_early_fulfillment]
+    market_keys = [:demand_distribution, :demand_frequency, :demand_data, :sales_price, :unfulfilled_penalty, :service_lead_time, :market_partial_fulfillment, :market_early_fulfillment]
     plant_keys = [:bill_of_materials, :production_capacity, :make_to_order]
-    arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :service_lead_time]
+    arc_keys = [:sales_price, :unfulfilled_penalty, :transportation_cost, :pipeline_holding_cost, :lead_time, :lead_time_data, :service_lead_time]
     all_market_keys = vcat(all_keys, market_keys)
     all_plant_keys = vcat(all_keys, plant_keys)
     all_market_plant_keys = vcat(all_keys, market_keys, plant_keys)
@@ -207,6 +211,8 @@ function set_default!(network::MetaDiGraph, key::Symbol, obj::Union{Int, Tuple},
         set_prop!(network, obj, key, merge(param_dict, Dict(mat => Inf)))
     elseif key == :demand_frequency #demand at every period
         merge!(param_dict, Dict(mat => 1))
+    elseif key in [:demand_data, :lead_time_data] #none provided
+        set_prop!(network, obj..., key, merge(param_dict, Dict(mat => nothing)))
     elseif key == :supplier_priority #random ordering of supplier priority
         merge!(param_dict, Dict(mat => inneighbors(network, obj) |> pred -> obj in pred ? [obj] ∪ pred : pred)) #if producer, set itself as first supplier priority
     elseif key == :customer_priority #random ordering of customer priority
@@ -341,14 +347,18 @@ end
 """
     store_arc_materials!(network::MetaDiGraph)
 
-Sore the materials that have a specified lead time on each arc.
+Store the materials that have a specified lead time on each arc.
 """
 function store_arc_materials!(network::MetaDiGraph)
     materials = get_prop(network, :materials)
     for e in edges(network)
+        arc_mats = Set()
         if :lead_time in keys(props(network, e))
-            arc_mats = Set(keys(get_prop(network, e, :lead_time)))
-            set_prop!(network, e, :arc_materials, arc_mats ∩ materials)
+            union!(arc_mats, keys(get_prop(network, e, :lead_time)))
         end
+        if :lead_time_data in keys(props(network, e))
+            union!(arc_mats, keys(get_prop(network, e, :lead_time_data)))
+        end
+        set_prop!(network, e, :arc_materials, arc_mats ∩ materials)
     end
 end
